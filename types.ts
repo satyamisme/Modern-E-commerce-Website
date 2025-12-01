@@ -176,6 +176,27 @@ export interface Order {
   };
 }
 
+export interface ReturnRequest {
+  id: string;
+  orderId: string;
+  customerEmail: string;
+  reason: 'Defective' | 'Wrong Item' | 'Changed Mind' | 'Other';
+  condition: 'Opened' | 'Sealed';
+  details: string;
+  status: 'Pending' | 'Approved' | 'Rejected' | 'Completed';
+  date: string;
+}
+
+export interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  type: 'info' | 'warning' | 'success' | 'error';
+  timestamp: number;
+  read: boolean;
+  link?: string;
+}
+
 export interface AppSettings {
   storeName: string;
   currency: string;

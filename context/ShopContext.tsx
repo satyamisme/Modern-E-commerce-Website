@@ -1,7 +1,6 @@
 
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Product, CartItem, ToastMessage, User, Order, Address, Review, AppSettings, CustomerProfile, Warehouse, RoleDefinition, Permission, RoleType } from '../types';
+import { Product, CartItem, ToastMessage, User, Order, Address, Review, AppSettings, CustomerProfile, Warehouse, RoleDefinition, Permission, RoleType, ReturnRequest, Notification } from '../types';
 import { PRODUCTS as INITIAL_PRODUCTS } from '../data/products';
 import { APP_CONFIG } from '../config';
 
@@ -24,7 +23,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   }
 };
 
-// ... (Keep existing INITIAL_WAREHOUSES, INITIAL_ROLES, AVAILABLE_PERMISSIONS, INITIAL_CUSTOMERS constants unchanged) ...
 const INITIAL_WAREHOUSES: Warehouse[] = [
   { 
     id: 'WH-MAIN-SHU', 
@@ -184,6 +182,8 @@ interface ShopContextType {
   appSettings: AppSettings;
   roles: RoleDefinition[];
   availablePermissions: Permission[];
+  returns: ReturnRequest[];
+  notifications: Notification[];
   
   // Actions
   setSearchQuery: (query: string) => void;
@@ -204,6 +204,7 @@ interface ShopContextType {
   addAddress: (address: Omit<Address, 'id'>) => void;
   removeAddress: (addressId: string) => void;
   createOrder: (orderData: Omit<Order, 'id' | 'date' | 'status' | 'paymentStatus'>) => Order;
+  updateUserProfile: (data: Partial<User>) => void;
   
   // Admin
   updateOrderStatus: (orderId: string, status: Order['status']) => void;
@@ -225,6 +226,12 @@ interface ShopContextType {
   deleteRole: (roleId: string) => void;
   checkPermission: (permissionKey: string) => boolean;
 
+  // Returns & Notifications
+  addReturnRequest: (request: Omit<ReturnRequest, 'id' | 'date' | 'status'>) => void;
+  updateReturnStatus: (id: string, status: ReturnRequest['status']) => void;
+  markNotificationRead: (id: string) => void;
+  clearNotifications: () => void;
+
   totalAmount: number;
   toast: ToastMessage | null;
   showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
@@ -240,7 +247,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [products, setProducts] = useState<Product[]>(() => {
     const saved = localStorage.getItem('lumina_products');
     if (saved) return JSON.parse(saved);
-    // Conditional Load based on Config
+    // Respect configuration for initial data load
     return APP_CONFIG.useMockData ? INITIAL_PRODUCTS : [];
   });
 
@@ -320,46 +327,41 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return saved ? JSON.parse(saved) : INITIAL_WAREHOUSES;
   });
 
+  // Returns State
+  const [returns, setReturns] = useState<ReturnRequest[]>(() => {
+    const saved = localStorage.getItem('lumina_returns');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // Notifications State
+  const [notifications, setNotifications] = useState<Notification[]>(() => {
+    const saved = localStorage.getItem('lumina_notifications');
+    return saved ? JSON.parse(saved) : [];
+  });
+
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
-  // Live Data Simulator (Only if Mock Data is enabled and products exist)
+  // --- Live Data Simulator & Alerts ---
   useEffect(() => {
-    if (!APP_CONFIG.useMockData || products.length === 0) return;
-
-    const interval = setInterval(() => {
-      // 10% Chance to simulate a new order
-      if (Math.random() > 0.90) {
-        const randomProduct = products[Math.floor(Math.random() * products.length)];
-        const randomCust = customers[Math.floor(Math.random() * customers.length)];
-        
-        if (!randomProduct || !randomCust) return;
-
-        const newOrder: Order = {
-          id: `ORD-${Math.floor(Math.random() * 90000)}`,
-          date: new Date().toISOString().split('T')[0],
-          total: randomProduct.price,
-          status: 'New',
-          paymentStatus: 'Paid',
-          paymentMethod: Math.random() > 0.5 ? 'KNET' : 'Credit Card',
-          items: [{...randomProduct, quantity: 1}],
-          fraudScore: Math.floor(Math.random() * 20),
-          customer: {
-            name: randomCust.name,
-            email: randomCust.email,
-            phone: randomCust.phone,
-            address: 'Kuwait',
-            segment: randomCust.segment
-          }
-        };
-        setOrders(prev => [newOrder, ...prev]);
-        showToast(`New Order from ${randomCust.name}!`, 'info');
-      }
-    }, 15000); // Check every 15 seconds
-
-    return () => clearInterval(interval);
-  }, [products, customers]);
+    // Check for Low Stock and generate notifications
+    const lowStockItems = products.filter(p => p.stock < 5);
+    lowStockItems.forEach(p => {
+       const alertId = `low-stock-${p.id}`;
+       setNotifications(prev => {
+          if (prev.some(n => n.id === alertId)) return prev;
+          return [{
+             id: alertId,
+             title: 'Low Stock Alert',
+             message: `${p.name} is running low (${p.stock} units left).`,
+             type: 'warning',
+             timestamp: Date.now(),
+             read: false
+          }, ...prev];
+       });
+    });
+  }, [products]);
 
   // Persistence Effects
   useEffect(() => { localStorage.setItem('lumina_products', JSON.stringify(products)); }, [products]);
@@ -371,6 +373,8 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => { localStorage.setItem('lumina_orders', JSON.stringify(orders)); }, [orders]);
   useEffect(() => { localStorage.setItem('lumina_roles', JSON.stringify(roles)); }, [roles]);
   useEffect(() => { localStorage.setItem('lumina_warehouses', JSON.stringify(warehouses)); }, [warehouses]);
+  useEffect(() => { localStorage.setItem('lumina_returns', JSON.stringify(returns)); }, [returns]);
+  useEffect(() => { localStorage.setItem('lumina_notifications', JSON.stringify(notifications)); }, [notifications]);
   
   useEffect(() => { 
     if(user) localStorage.setItem('lumina_user', JSON.stringify(user));
@@ -386,22 +390,17 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, 3000);
   };
 
-  // Cart Logic with Inventory Check
+  // --- Cart & User Logic ---
   const addToCart = (product: Product & { selectedColor?: string; selectedStorage?: string }) => {
     setCart(prev => {
-      // Create a unique ID for the cart item based on product ID + variants
       const cartItemId = `${product.id}-${product.selectedColor || ''}-${product.selectedStorage || ''}`;
-      
       const existing = prev.find(item => {
-          // Compatibility check for legacy items that might not have custom IDs
           const existingId = `${item.id}-${item.selectedColor || ''}-${item.selectedStorage || ''}`;
           return existingId === cartItemId;
       });
-
       const currentStock = products.find(p => p.id === product.id)?.stock || 0;
 
       if (existing) {
-        // Just checking basic stock here, improved variant stock check is in ProductDetails
         if (existing.quantity + 1 > currentStock) {
           showToast(`Sorry, only ${currentStock} units available`, 'error');
           return prev;
@@ -419,63 +418,39 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       showToast(`Added ${product.name} to cart`, 'success');
-      return [...prev, { ...product, quantity: 1 }]; // Ensure quantity is set
+      return [...prev, { ...product, quantity: 1 }];
     });
     setIsCartOpen(true);
   };
 
   const removeFromCart = (productId: string) => {
-    setCart(prev => prev.filter(item => {
-       // Support removing by raw product ID or compound ID
-       return item.id !== productId;
-    }));
+    setCart(prev => prev.filter(item => item.id !== productId));
     showToast('Removed item from cart', 'info');
   };
 
   const updateQuantity = (productId: string, quantity: number) => {
-    if (quantity < 1) {
-      removeFromCart(productId);
-      return;
-    }
-
-    const product = products.find(p => p.id === productId);
-    
-    setCart(prev => prev.map(item => 
-      item.id === productId ? { ...item, quantity } : item
-    ));
+    if (quantity < 1) { removeFromCart(productId); return; }
+    setCart(prev => prev.map(item => item.id === productId ? { ...item, quantity } : item));
   };
 
   const toggleCart = () => setIsCartOpen(!isCartOpen);
   const clearCart = () => setCart([]);
 
-  // Wishlist Logic
   const toggleWishlist = (product: Product) => {
     setWishlist(prev => {
       const exists = prev.find(p => p.id === product.id);
-      if (exists) {
-        showToast(`Removed ${product.name} from wishlist`, 'info');
-        return prev.filter(p => p.id !== product.id);
-      }
-      showToast(`Added ${product.name} to wishlist`, 'success');
-      return [...prev, product];
+      if (exists) { showToast(`Removed ${product.name} from wishlist`, 'info'); return prev.filter(p => p.id !== product.id); }
+      showToast(`Added ${product.name} to wishlist`, 'success'); return [...prev, product];
     });
   };
 
   const isInWishlist = (productId: string) => wishlist.some(p => p.id === productId);
 
-  // Compare Logic
   const addToCompare = (product: Product) => {
     setCompareList(prev => {
-      if (prev.find(p => p.id === product.id)) {
-        showToast('Already in comparison list', 'info');
-        return prev;
-      }
-      if (prev.length >= 3) {
-        showToast('You can compare max 3 products', 'error');
-        return prev;
-      }
-      showToast('Added to comparison', 'success');
-      return [...prev, product];
+      if (prev.find(p => p.id === product.id)) { showToast('Already in comparison list', 'info'); return prev; }
+      if (prev.length >= 3) { showToast('You can compare max 3 products', 'error'); return prev; }
+      showToast('Added to comparison', 'success'); return [...prev, product];
     });
   };
 
@@ -486,25 +461,21 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const isInCompare = (productId: string) => compareList.some(p => p.id === productId);
 
-  // Recently Viewed Logic
   const addToRecentlyViewed = (product: Product) => {
     setRecentlyViewed(prev => {
       const filtered = prev.filter(p => p.id !== product.id);
-      return [product, ...filtered].slice(0, 10); // Keep last 10
+      return [product, ...filtered].slice(0, 10);
     });
   };
 
-  // Auth Logic with Roles
+  // Auth
   const login = (email: string) => {
-    // Mock Role Determination based on email
     let role: RoleType = 'User';
     let name = email.split('@')[0];
-    let shopId = undefined;
-
     if (email.includes('super') || email.includes('ahmed')) { role = 'Super Admin'; name = 'Ahmed (Admin)'; }
-    else if (email.includes('admin')) { role = 'Shop Admin'; name = 'Shop Manager'; shopId = 'SH-KHA-02'; }
-    else if (email.includes('sales')) { role = 'Sales'; name = 'Sales Agent'; shopId = 'SH-SAL-01'; }
-    else if (email.includes('warehouse')) { role = 'Warehouse Staff'; name = 'Stock Manager'; shopId = 'WH-MAIN-SHU'; }
+    else if (email.includes('admin')) { role = 'Shop Admin'; name = 'Shop Manager'; }
+    else if (email.includes('sales')) { role = 'Sales'; name = 'Sales Agent'; }
+    else if (email.includes('warehouse')) { role = 'Warehouse Staff'; name = 'Stock Manager'; }
 
     setUser({
       id: role !== 'User' ? `staff-${Date.now()}` : 'u-123',
@@ -512,65 +483,41 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       email: email,
       avatar: `https://ui-avatars.com/api/?name=${name}&background=random`,
       role: role,
-      shopId: shopId,
       addresses: []
     });
     showToast(`Welcome back, ${name}! (${role})`, 'success');
   };
 
   const register = (name: string, email: string) => {
-    setUser({
-      id: `u-${Date.now()}`,
-      name,
-      email,
-      avatar: `https://ui-avatars.com/api/?name=${name}&background=random`,
-      role: 'User',
-      addresses: []
-    });
+    setUser({ id: `u-${Date.now()}`, name, email, avatar: `https://ui-avatars.com/api/?name=${name}&background=random`, role: 'User', addresses: [] });
     showToast('Account created successfully!', 'success');
   }
 
-  const logout = () => {
-    setUser(null);
-    showToast('You have been logged out', 'info');
-  };
+  const logout = () => { setUser(null); showToast('You have been logged out', 'info'); };
 
   const checkPermission = (permissionKey: string): boolean => {
     if (!user) return false;
-    // Find role definition
     const roleDef = roles.find(r => r.name === user.role);
     if (!roleDef) return false;
     if (roleDef.permissions.includes('all')) return true;
     return roleDef.permissions.includes(permissionKey);
   };
 
-  // Review Logic
   const addReview = (productId: string, review: Omit<Review, 'id' | 'date'>) => {
-    const newReview: Review = {
-      ...review,
-      id: `rev-${Date.now()}`,
-      date: new Date().toLocaleDateString()
-    };
-    
     setProducts(prev => prev.map(p => {
       if (p.id === productId) {
-        const reviews = [...(p.reviews || []), newReview];
-        // Recalculate average rating
+        const reviews = [...(p.reviews || []), { ...review, id: `rev-${Date.now()}`, date: new Date().toLocaleDateString() }];
         const totalRating = reviews.reduce((sum, r) => sum + r.rating, 0);
-        const newRating = Number((totalRating / reviews.length).toFixed(1));
-        return { ...p, reviews, rating: newRating, reviewsCount: reviews.length };
+        return { ...p, reviews, rating: Number((totalRating / reviews.length).toFixed(1)), reviewsCount: reviews.length };
       }
       return p;
     }));
-    
-    showToast('Review submitted successfully!', 'success');
+    showToast('Review submitted!', 'success');
   };
 
-  // Address Logic
   const addAddress = (address: Omit<Address, 'id'>) => {
     if (!user) return;
-    const newAddress: Address = { ...address, id: `addr-${Date.now()}` };
-    setUser(prev => prev ? { ...prev, addresses: [...prev.addresses, newAddress] } : null);
+    setUser(prev => prev ? { ...prev, addresses: [...prev.addresses, { ...address, id: `addr-${Date.now()}` }] } : null);
     showToast('Address added successfully', 'success');
   };
 
@@ -580,7 +527,12 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     showToast('Address removed', 'info');
   };
 
-  // Order Logic
+  const updateUserProfile = (data: Partial<User>) => {
+      if (!user) return;
+      setUser(prev => prev ? { ...prev, ...data } : null);
+      showToast('Profile updated successfully', 'success');
+  };
+
   const createOrder = (orderData: Omit<Order, 'id' | 'date' | 'status' | 'paymentStatus'>) => {
     const newOrder: Order = {
       ...orderData,
@@ -588,39 +540,30 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       date: new Date().toISOString().split('T')[0],
       status: 'New',
       paymentStatus: 'Paid',
-      fraudScore: 5 // Low risk by default
+      fraudScore: 5
     };
     setOrders(prev => [newOrder, ...prev]);
     
-    // Update Stock Logic
+    // Create Notification
+    setNotifications(prev => [{
+        id: `notif-${Date.now()}`,
+        title: 'New Order Received',
+        message: `Order #${newOrder.id} placed by ${newOrder.customer.name}`,
+        type: 'success',
+        timestamp: Date.now(),
+        read: false
+    }, ...prev]);
+
     setProducts(prev => prev.map(p => {
       const orderedItem = orderData.items.find(i => i.id === p.id);
-      if(orderedItem) {
-        // Decrease stock
-        return { ...p, stock: Math.max(0, p.stock - orderedItem.quantity) };
-      }
+      if(orderedItem) { return { ...p, stock: Math.max(0, p.stock - orderedItem.quantity) }; }
       return p;
     }));
-
-    // Update Customer LTV if exists
-    const custEmail = orderData.customer.email;
-    setCustomers(prev => {
-       const existing = prev.find(c => c.email === custEmail);
-       if(existing) {
-          return prev.map(c => c.email === custEmail ? { 
-             ...c, 
-             totalSpent: c.totalSpent + orderData.total,
-             ordersCount: c.ordersCount + 1,
-             lastOrderDate: new Date().toISOString().split('T')[0]
-          } : c);
-       }
-       return prev;
-    });
 
     return newOrder;
   };
 
-  // Admin Logic
+  // Admin Actions
   const updateOrderStatus = (orderId: string, status: Order['status']) => {
     if(!checkPermission('manage_orders')) { showToast('Permission denied', 'error'); return; }
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
@@ -642,7 +585,6 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const updateProduct = (product: Product) => {
     if(!checkPermission('manage_products')) { showToast('Permission denied', 'error'); return; }
     setProducts(prev => prev.map(p => p.id === product.id ? product : p));
-    setCart(prev => prev.map(item => item.id === product.id ? { ...item, ...product, quantity: item.quantity } : item));
     showToast('Product updated successfully', 'success');
   };
 
@@ -664,7 +606,6 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     showToast('Customer profile updated', 'success');
   };
 
-  // Role Management Actions
   const addRole = (role: RoleDefinition) => {
     if(!checkPermission('manage_roles')) { showToast('Permission denied', 'error'); return; }
     setRoles(prev => [...prev, role]);
@@ -683,7 +624,6 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     showToast('Role deleted', 'info');
   }
 
-  // Warehouse Management Actions
   const addWarehouse = (warehouse: Warehouse) => {
     if(!checkPermission('manage_inventory')) { showToast('Permission denied', 'error'); return; }
     setWarehouses(prev => [...prev, warehouse]);
@@ -703,60 +643,52 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     showToast('Location removed', 'success');
   };
 
+  // --- Returns & Notifications ---
+  const addReturnRequest = (request: Omit<ReturnRequest, 'id' | 'date' | 'status'>) => {
+      const newReturn: ReturnRequest = {
+          ...request,
+          id: `RET-${Date.now()}`,
+          date: new Date().toISOString().split('T')[0],
+          status: 'Pending'
+      };
+      setReturns(prev => [newReturn, ...prev]);
+      
+      // Notify Admin
+      setNotifications(prev => [{
+          id: `notif-${Date.now()}`,
+          title: 'New Return Request',
+          message: `Return request for order #${request.orderId}`,
+          type: 'warning',
+          timestamp: Date.now(),
+          read: false
+      }, ...prev]);
+      
+      showToast('Return request submitted successfully', 'success');
+  };
+
+  const updateReturnStatus = (id: string, status: ReturnRequest['status']) => {
+      if(!checkPermission('manage_orders')) { showToast('Permission denied', 'error'); return; }
+      setReturns(prev => prev.map(r => r.id === id ? { ...r, status } : r));
+      showToast(`Return status updated to ${status}`, 'success');
+  };
+
+  const markNotificationRead = (id: string) => {
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  };
+
+  const clearNotifications = () => {
+      setNotifications([]);
+  };
+
   const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
   return (
     <ShopContext.Provider value={{
-      products,
-      cart,
-      wishlist,
-      compareList,
-      recentlyViewed,
-      isCartOpen,
-      searchQuery,
-      user,
-      orders,
-      customers,
-      warehouses,
-      appSettings,
-      roles,
-      availablePermissions: AVAILABLE_PERMISSIONS,
-      setSearchQuery,
-      addToCart,
-      removeFromCart,
-      updateQuantity,
-      toggleCart,
-      clearCart,
-      toggleWishlist,
-      isInWishlist,
-      addToCompare,
-      removeFromCompare,
-      isInCompare,
-      addToRecentlyViewed,
-      totalAmount,
-      toast,
-      showToast,
-      login,
-      logout,
-      register,
-      addReview,
-      addAddress,
-      removeAddress,
-      createOrder,
-      updateOrderStatus,
-      deleteOrder,
-      deleteProduct,
-      updateProduct,
-      addProduct,
-      updateSettings,
-      updateCustomer,
-      addRole,
-      updateRole,
-      deleteRole,
-      checkPermission,
-      addWarehouse,
-      updateWarehouse,
-      removeWarehouse
+      products, cart, wishlist, compareList, recentlyViewed, isCartOpen, searchQuery, user, orders, customers, warehouses, appSettings, roles, availablePermissions: AVAILABLE_PERMISSIONS, returns, notifications,
+      setSearchQuery, addToCart, removeFromCart, updateQuantity, toggleCart, clearCart, toggleWishlist, isInWishlist, addToCompare, removeFromCompare, isInCompare, addToRecentlyViewed,
+      totalAmount, toast, showToast, login, logout, register, addReview, addAddress, removeAddress, createOrder, updateUserProfile,
+      updateOrderStatus, deleteOrder, deleteProduct, updateProduct, addProduct, updateSettings, updateCustomer, addRole, updateRole, deleteRole, checkPermission,
+      addWarehouse, updateWarehouse, removeWarehouse, addReturnRequest, updateReturnStatus, markNotificationRead, clearNotifications
     }}>
       {children}
     </ShopContext.Provider>
@@ -765,8 +697,6 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useShop = () => {
   const context = useContext(ShopContext);
-  if (context === undefined) {
-    throw new Error('useShop must be used within a ShopProvider');
-  }
+  if (context === undefined) { throw new Error('useShop must be used within a ShopProvider'); }
   return context;
 };

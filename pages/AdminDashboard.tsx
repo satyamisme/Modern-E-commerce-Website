@@ -1,10 +1,11 @@
 
+
 import React, { useState } from 'react';
 import { useShop } from '../context/ShopContext';
 import { Navigate } from 'react-router-dom';
 import { 
    LayoutDashboard, Package, ShoppingBag, Settings as SettingsIcon, 
-   LogOut, Bell, Search, RefreshCw, BarChart2, MessageSquare, Users, Shield
+   LogOut, Bell, Search, RefreshCw, BarChart2, MessageSquare, Users, Shield, RefreshCcw, Check, X
 } from 'lucide-react';
 
 // Import Modular Components
@@ -15,16 +16,19 @@ import { CustomerCRM } from '../components/admin/CustomerCRM';
 import { InventoryManager } from '../components/admin/InventoryManager';
 import { RoleManager } from '../components/admin/RoleManager';
 import { SystemConfig } from '../components/admin/SystemConfig';
+import { ReturnsManager } from '../components/admin/ReturnsManager';
 
 export const AdminDashboard: React.FC = () => {
-  const { user, logout, checkPermission } = useShop();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'products' | 'orders' | 'customers' | 'inventory' | 'roles' | 'settings'>('dashboard');
+  const { user, logout, checkPermission, notifications, markNotificationRead, clearNotifications } = useShop();
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'products' | 'orders' | 'customers' | 'inventory' | 'roles' | 'settings' | 'returns'>('dashboard');
   const [showNotifications, setShowNotifications] = useState(false);
   const [lang, setLang] = useState<'EN' | 'AR'>('EN');
 
   if (!user || (user.role === 'User')) {
      return <Navigate to="/login" replace />;
   }
+
+  const unreadCount = notifications.filter(n => !n.read).length;
 
   const NavItem = ({ id, icon: Icon, label, permission }: any) => {
      if(permission && !checkPermission(permission)) return null;
@@ -70,6 +74,7 @@ export const AdminDashboard: React.FC = () => {
              <NavItem id="products" icon={Package} label="Products & AI" permission="manage_products" />
              <NavItem id="orders" icon={ShoppingBag} label="Order Processing" permission="manage_orders" />
              <NavItem id="inventory" icon={RefreshCw} label="Inventory Sync" permission="manage_inventory" />
+             <NavItem id="returns" icon={RefreshCcw} label="Returns & Refunds" permission="manage_orders" />
              
              <div className="text-[10px] font-bold text-gray-500 uppercase px-4 py-2 tracking-wider mt-6">CRM</div>
              <NavItem id="customers" icon={Users} label="Customer 360" permission="manage_users" />
@@ -127,16 +132,46 @@ export const AdminDashboard: React.FC = () => {
                     >
                        {lang}
                     </button>
-                    <button className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-50 text-gray-500 hover:text-primary transition-all">
-                       <MessageSquare size={20} />
-                    </button>
-                    <button 
-                      onClick={() => setShowNotifications(!showNotifications)}
-                      className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-50 text-gray-500 hover:text-primary relative transition-all"
-                    >
-                       <Bell size={20} />
-                       <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>
-                    </button>
+                    
+                    {/* Notification Dropdown */}
+                    <div className="relative">
+                        <button 
+                           onClick={() => setShowNotifications(!showNotifications)}
+                           className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-50 text-gray-500 hover:text-primary relative transition-all"
+                        >
+                           <Bell size={20} />
+                           {unreadCount > 0 && <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>}
+                        </button>
+
+                        {showNotifications && (
+                           <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 z-50">
+                              <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                                 <h4 className="font-bold text-gray-900 text-sm">Notifications ({unreadCount})</h4>
+                                 <button onClick={clearNotifications} className="text-xs text-blue-600 hover:underline">Clear All</button>
+                              </div>
+                              <div className="max-h-80 overflow-y-auto custom-scrollbar">
+                                 {notifications.length === 0 ? (
+                                    <div className="p-8 text-center text-gray-400 text-sm">No new notifications</div>
+                                 ) : (
+                                    notifications.map(notif => (
+                                       <div 
+                                          key={notif.id} 
+                                          onClick={() => markNotificationRead(notif.id)}
+                                          className={`p-4 border-b border-gray-50 hover:bg-gray-50 cursor-pointer flex gap-3 ${!notif.read ? 'bg-blue-50/30' : ''}`}
+                                       >
+                                          <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${!notif.read ? 'bg-blue-500' : 'bg-gray-300'}`}></div>
+                                          <div>
+                                             <p className="text-xs font-bold text-gray-900 mb-0.5">{notif.title}</p>
+                                             <p className="text-xs text-gray-500 leading-snug">{notif.message}</p>
+                                             <p className="text-[10px] text-gray-400 mt-1">{new Date(notif.timestamp).toLocaleTimeString()}</p>
+                                          </div>
+                                       </div>
+                                    ))
+                                 )}
+                              </div>
+                           </div>
+                        )}
+                    </div>
                 </div>
              </div>
           </header>
@@ -150,6 +185,7 @@ export const AdminDashboard: React.FC = () => {
             {activeTab === 'inventory' && <InventoryManager />}
             {activeTab === 'roles' && <RoleManager />}
             {activeTab === 'settings' && <SystemConfig />}
+            {activeTab === 'returns' && <ReturnsManager />}
           </div>
 
        </main>

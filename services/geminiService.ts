@@ -168,13 +168,16 @@ export const generateSEO = async (productName: string, description: string): Pro
 // Search for real image URLs
 export const findProductImage = async (modelName: string): Promise<string[]> => {
     // Only Google Provider supports Grounding tools directly via SDK in this manner
+    // For other providers, we would need a different search tool implementation (e.g. SerpApi)
+    // For now, we fallback to placeholders if not using Google or if error occurs.
+    
     if (APP_CONFIG.aiProvider !== 'google') {
-        console.warn("Image fetching requires Google Provider for Search Grounding. Returning placeholders.");
+        console.warn("Image fetching requires Google Provider for Search Grounding.");
         return [];
     }
 
     try {
-        // Use gemini-2.5-flash for best grounding support
+        // FIX: Use gemini-2.5-flash which has broad availability for Search Grounding
         const response = await googleAI.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: `Find 3 high-quality, official promotional image URLs for the smartphone: "${modelName}". 
@@ -214,7 +217,7 @@ export const findProductImage = async (modelName: string): Promise<string[]> => 
     } catch (error: any) {
         // Handle 403 or other permission errors gracefully
         if (error.message && (error.message.includes('403') || error.message.includes('PERMISSION_DENIED'))) {
-             console.warn("Search Grounding permission denied. Ensure API key has access to Google Search tool.");
+             console.warn("Search Grounding permission denied. Ensure API key has access to Google Search tool. Returning empty list.");
         } else {
              console.error("Error fetching images:", error);
         }

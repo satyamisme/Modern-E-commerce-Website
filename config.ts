@@ -2,7 +2,9 @@
 export type AIProvider = 'google' | 'openai' | 'grok' | 'perplexity' | 'deepseek';
 
 export const APP_CONFIG = {
-  // Toggle this to FALSE to start with an empty database for production/real testing
+  // --- DATA SOURCE CONFIGURATION ---
+  // Set to 'false' to load an empty store for production/real data entry.
+  // Set to 'true' to load sample iPhones/Samsungs/etc. for testing.
   useMockData: true, 
   
   storeName: "LAKKI PHONES",
@@ -14,6 +16,7 @@ export const APP_CONFIG = {
   
   // AI Configuration
   // Options: 'google', 'grok', 'deepseek', 'perplexity', 'openai'
+  // Note: 'google' is recommended for Image Search capabilities.
   aiProvider: 'google' as AIProvider, 
   
   // API Keys should ideally be in process.env, but we map endpoints here

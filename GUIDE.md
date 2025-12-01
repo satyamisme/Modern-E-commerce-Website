@@ -1,97 +1,96 @@
 
-# LAKKI PHONES - Ultimate Developer Guide
+# LAKKI PHONES - Administrator & Developer Guide
 
-**Version**: 2.0 (Multi-Provider AI Supported)
+**Version**: 2.1 (Multi-Provider AI & Config Support)
 
-Welcome to the LAKKI PHONES platform! This guide covers everything from setting up multiple AI providers to managing inventory.
-
----
-
-## 🚀 1. Quick Start
-
-### Configuration
-The file `config.ts` is the control center for the application.
-
-- **Toggle Real/Mock Data**: 
-  Change `useMockData: true` to `false` to start with an empty inventory for production.
-
-- **Switch AI Provider**:
-  Change `aiProvider` to `'google'`, `'grok'`, `'deepseek'`, etc.
-
-### Prerequisites
-- Node.js 18+
-- An API Key for your chosen AI Provider.
+Welcome to the LAKKI PHONES platform! This guide covers everything from initial setup to managing your inventory with AI.
 
 ---
 
-## 🤖 2. Multi-Provider AI Setup
+## 🚀 1. Configuration & Setup
 
-LAKKI PHONES supports **any OpenAI-compatible LLM** plus Google Gemini Native.
+### **Config.ts: The Control Center**
+The file `config.ts` located in the root (or src) is the main control center.
 
-### Supported Providers & Setup
+#### **How to Switch to Real Data (Remove Mock Data)**
+To start with a clean database for production:
+1. Open `config.ts`.
+2. Change `useMockData: true` to `useMockData: false`.
+3. Refresh the app. The inventory will be empty, ready for you to import CSVs or add products manually.
 
-1.  **Google Gemini** (Default)
-    *   **Best For**: Image Search, Fast Text, Multimodal.
-    *   **Key**: [aistudio.google.com](https://aistudio.google.com/)
-    *   **Config**: `aiProvider: 'google'`
+#### **How to Switch AI Providers**
+You can use Google, Grok, DeepSeek, or OpenAI.
+1. Open `config.ts`.
+2. Change `aiProvider` to one of: `'google'`, `'grok'`, `'deepseek'`, `'perplexity'`, `'openai'`.
+3. **Important**: You must provide the corresponding API Key in your environment variables.
 
-2.  **Grok (xAI)**
-    *   **Best For**: Real-time knowledge (if available via API), witty descriptions.
-    *   **Key**: [console.x.ai](https://console.x.ai/)
-    *   **Config**: `aiProvider: 'grok'`
+---
 
-3.  **DeepSeek**
-    *   **Best For**: Coding logic, structured JSON generation, cost-efficiency.
-    *   **Key**: [platform.deepseek.com](https://platform.deepseek.com/)
-    *   **Config**: `aiProvider: 'deepseek'`
+## 🤖 2. AI Setup & API Keys
 
-4.  **Perplexity (Sonar)**
-    *   **Best For**: Live internet search for specs and pricing.
-    *   **Key**: [perplexity.ai](https://www.perplexity.ai/)
-    *   **Config**: `aiProvider: 'perplexity'`
+The app reads the API Key from `process.env.API_KEY`.
 
-### Environment Variables
-Ensure your environment has the API key set. The app uses `process.env.API_KEY` for the selected provider.
+### **Supported Providers**
 
-```env
-API_KEY=your_secret_key_here
-```
+| Provider | Config Value | Best For | Notes |
+| :--- | :--- | :--- | :--- |
+| **Google Gemini** | `'google'` | **Images**, Speed, Free Tier | **Recommended**. Supports Image Search. |
+| **Grok (xAI)** | `'grok'` | Witty Copy, Live Info | Good for text descriptions. |
+| **DeepSeek** | `'deepseek'` | Logic, JSON | Very cost-effective. |
+| **Perplexity** | `'perplexity'`| Live Search | Great for up-to-date specs. |
+
+### **Fixing "Permission Denied" (403) Errors**
+If you see a 403 error when fetching images:
+1. Ensure you are using the **Google** provider (`aiProvider: 'google'`).
+2. Ensure your API Key has access to **Google Search Grounding**.
+3. If on a free tier that doesn't support Search, the app will gracefully fallback to manual upload or placeholder images.
 
 ---
 
 ## 🛠 3. Admin Dashboard Workflow
 
-Access via `/admin`.
+Access the dashboard at `/admin`.
 
-### Adding a New Product with AI
+### **Adding a New Product (The AI Way)**
 1.  Click **"+ Add Product"**.
-2.  Enter the **Model Name** (e.g., "Samsung S24 Ultra").
-3.  **Auto-Fill Specs**: Go to the *Specifications* tab and click "Auto-Fill Specs". The AI will fetch technical details.
-4.  **Generate Variants**:
+2.  **Basic Info**: Enter the **Model Name** (e.g., "Samsung S24 Ultra").
+3.  **Specs**: Go to the *Specifications* tab and click **"Auto-Fill with AI"**. The system will fetch technical details automatically.
+4.  **Media**: Go to the *Media* tab and click **"AI Search"**. It will attempt to find official product images.
+5.  **Variants**: 
     *   Go to *Variants & Stock*.
     *   Add Colors (e.g., "Titanium Gray") and Storage options.
-    *   Click **"Generate Matrix"**.
-5.  **Smart Modifiers**: Use the bulk tool to set price rules (e.g., "Increase Price by 20 for 512GB").
-6.  **SEO**: Go to *SEO* tab and click "Generate with AI" for meta tags.
+    *   Click **"Generate Matrix"** to create all SKUs.
+    *   Use **Smart Modifiers** to bulk-update prices (e.g., "Add 50 KWD for 1TB models").
+6.  **SEO**: Go to *SEO* tab and click **"Generate with AI"** for optimized meta tags.
 
-### Managing Inventory
-- Go to the **Inventory** tab to see stock levels across 8 warehouses/shops.
-- Click "Transfer" to initiate stock movement (UI only).
-
----
-
-## 🎨 4. Customization
-
-### Theming
-The app uses Tailwind CSS. Colors are defined in `index.html` under `tailwind.config`.
-- `primary`: Navy Blue (Brand)
-- `secondary`: Gold (Luxury/Heritage)
-- `accent`: Coral Red (Action)
-
-### Animations
-Custom keyframes (`fade-in`, `slide-up`, `zoom-in`) are defined in `index.html`.
+### **Inventory Management**
+- **Warehouses**: Go to *Inventory* tab -> *Manage Stores*. You can add real physical shop locations.
+- **Transfers**: Click "Transfer" on any product row to move stock between shops.
 
 ---
 
-## 📱 5. Mobile & PWA
-The app is fully responsive. The `BottomNav` component appears only on mobile screens.
+## 🎨 4. Frontend & Customization
+
+### **Theme Colors**
+The app uses Tailwind CSS. You can change the brand colors in `index.html` inside the `tailwind.config` script:
+- `primary`: Main brand color (currently Navy Blue).
+- `secondary`: Accent color (currently Gold).
+
+### **Homepage Management**
+To feature products on the homepage:
+1. Go to Admin -> Product Editor.
+2. Go to **Storefront** tab.
+3. Toggle **"Hero Slider"**, **"Featured Rail"**, or **"Scrolling Ticker"**.
+
+---
+
+## 📱 5. Troubleshooting
+
+**Q: My changes aren't saving?**
+A: This demo uses `localStorage`. If you clear your browser cache, data resets. For production, connect the `ShopContext` to a database like Supabase.
+
+**Q: Images are broken?**
+A: Ensure your internet connection allows access to Unsplash or the URLs returned by the AI.
+
+**Q: AI is slow?**
+A: Generative AI can take 2-5 seconds. We have added loading spinners to indicate progress.

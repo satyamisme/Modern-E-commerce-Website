@@ -1,59 +1,145 @@
 
-import React from 'react';
-import { RefreshCcw, AlertCircle, CheckCircle } from 'lucide-react';
+
+import React, { useState } from 'react';
+import { RefreshCcw, AlertCircle, CheckCircle, Package, ArrowRight, Upload } from 'lucide-react';
+import { useShop } from '../context/ShopContext';
+import { ReturnRequest } from '../types';
 
 export const Returns: React.FC = () => {
+  const { addReturnRequest, user } = useShop();
+  const [step, setStep] = useState<1 | 2>(1);
+  const [formData, setFormData] = useState({
+     orderId: '',
+     email: user?.email || '',
+     reason: 'Defective',
+     condition: 'Sealed',
+     details: ''
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+     e.preventDefault();
+     addReturnRequest({
+        orderId: formData.orderId,
+        customerEmail: formData.email,
+        reason: formData.reason as any,
+        condition: formData.condition as any,
+        details: formData.details
+     });
+     setStep(2);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 py-12">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
          <div className="bg-white rounded-3xl shadow-sm border border-gray-200 p-8 md:p-12">
-            <div className="flex items-center gap-4 mb-8">
-               <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
-                  <RefreshCcw size={32} />
-               </div>
-               <h1 className="text-3xl font-bold text-gray-900">Returns & Refund Policy</h1>
-            </div>
-
-            <div className="prose max-w-none text-gray-600">
-               <p className="lead text-lg">
-                  At LAKKI PHONES, we want you to be completely satisfied with your purchase. If you're not happy with your device, we're here to help.
-               </p>
-
-               <h3 className="text-gray-900 font-bold text-xl mt-8 mb-4">14-Day Return Policy</h3>
-               <p>
-                  You have 14 calendar days to return an item from the date you received it. To be eligible for a return, your item must be:
-               </p>
-               <ul className="space-y-2 mt-4 mb-6">
-                  <li className="flex items-center gap-2"><CheckCircle size={16} className="text-green-500"/> Unused and in the same condition that you received it.</li>
-                  <li className="flex items-center gap-2"><CheckCircle size={16} className="text-green-500"/> In the original packaging with all seals intact.</li>
-                  <li className="flex items-center gap-2"><CheckCircle size={16} className="text-green-500"/> Accompanied by the receipt or proof of purchase.</li>
-               </ul>
-
-               <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 my-6 rounded-r-lg">
-                  <div className="flex gap-3">
-                     <AlertCircle className="text-yellow-600 flex-shrink-0" />
-                     <p className="text-sm text-yellow-800 m-0">
-                        <strong>Note:</strong> Opened software, headphones, and screen protectors cannot be returned for hygiene and copyright reasons unless defective.
-                     </p>
+            
+            {step === 1 ? (
+               <>
+                  <div className="flex items-center gap-4 mb-8">
+                     <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
+                        <RefreshCcw size={32} />
+                     </div>
+                     <div>
+                        <h1 className="text-3xl font-bold text-gray-900">Returns & Refund Center</h1>
+                        <p className="text-gray-500 text-sm mt-1">Submit a return request in 30 seconds.</p>
+                     </div>
                   </div>
+
+                  <form onSubmit={handleSubmit} className="space-y-6">
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                           <label className="block text-sm font-bold text-gray-700 mb-2">Order ID</label>
+                           <div className="relative">
+                              <Package className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                              <input 
+                                required
+                                type="text" 
+                                value={formData.orderId}
+                                onChange={e => setFormData({...formData, orderId: e.target.value})}
+                                className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-primary transition-all"
+                                placeholder="ORD-1234-XX"
+                              />
+                           </div>
+                        </div>
+                        <div>
+                           <label className="block text-sm font-bold text-gray-700 mb-2">Email Address</label>
+                           <input 
+                              required
+                              type="email" 
+                              value={formData.email}
+                              onChange={e => setFormData({...formData, email: e.target.value})}
+                              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-primary transition-all"
+                              placeholder="you@example.com"
+                           />
+                        </div>
+                        <div>
+                           <label className="block text-sm font-bold text-gray-700 mb-2">Reason for Return</label>
+                           <select 
+                              value={formData.reason}
+                              onChange={e => setFormData({...formData, reason: e.target.value})}
+                              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-primary transition-all"
+                           >
+                              <option value="Defective">Defective / Not Working</option>
+                              <option value="Wrong Item">Received Wrong Item</option>
+                              <option value="Changed Mind">Changed Mind</option>
+                              <option value="Other">Other</option>
+                           </select>
+                        </div>
+                        <div>
+                           <label className="block text-sm font-bold text-gray-700 mb-2">Item Condition</label>
+                           <select 
+                              value={formData.condition}
+                              onChange={e => setFormData({...formData, condition: e.target.value})}
+                              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-primary transition-all"
+                           >
+                              <option value="Sealed">Brand New (Sealed)</option>
+                              <option value="Opened">Opened (Box unsealed)</option>
+                           </select>
+                        </div>
+                        <div className="md:col-span-2">
+                           <label className="block text-sm font-bold text-gray-700 mb-2">Additional Details</label>
+                           <textarea 
+                              required
+                              value={formData.details}
+                              onChange={e => setFormData({...formData, details: e.target.value})}
+                              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-primary transition-all h-32 resize-none"
+                              placeholder="Please describe the issue or reason for return..."
+                           />
+                        </div>
+                     </div>
+
+                     <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg flex gap-3">
+                        <AlertCircle className="text-yellow-600 flex-shrink-0" />
+                        <p className="text-sm text-yellow-800 m-0">
+                           <strong>Policy Note:</strong> Returns for "Changed Mind" are only accepted for sealed items within 14 days. Defective items are covered under warranty.
+                        </p>
+                     </div>
+
+                     <button 
+                        type="submit" 
+                        className="w-full py-4 bg-primary text-white font-bold rounded-xl hover:bg-slate-800 transition-all shadow-lg flex items-center justify-center gap-2"
+                     >
+                        Submit Request <ArrowRight size={18} />
+                     </button>
+                  </form>
+               </>
+            ) : (
+               <div className="text-center py-12 animate-in zoom-in-95 duration-300">
+                  <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                     <CheckCircle size={40} className="text-green-600" />
+                  </div>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-2">Request Submitted</h2>
+                  <p className="text-gray-500 mb-8 max-w-md mx-auto">
+                     We have received your return request. Our team will review it and send you a shipping label via email within 24 hours.
+                  </p>
+                  <button 
+                     onClick={() => setStep(1)}
+                     className="px-8 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition-colors"
+                  >
+                     Return to Form
+                  </button>
                </div>
-
-               <h3 className="text-gray-900 font-bold text-xl mt-8 mb-4">Refunds</h3>
-               <p>
-                  Once we receive your item, we will inspect it and notify you that we have received your returned item. We will immediately notify you on the status of your refund after inspecting the item.
-               </p>
-               <p>
-                  If your return is approved, we will initiate a refund to your credit card (or original method of payment). You will receive the credit within a certain amount of days, depending on your card issuer's policies.
-               </p>
-
-               <h3 className="text-gray-900 font-bold text-xl mt-8 mb-4">Shipping</h3>
-               <p>
-                  You will be responsible for paying for your own shipping costs for returning your item. Shipping costs are non-refundable. If you receive a refund, the cost of return shipping will be deducted from your refund.
-               </p>
-
-               <h3 className="text-gray-900 font-bold text-xl mt-8 mb-4">Contact Us</h3>
-               <p>If you have any questions on how to return your item to us, contact us at <span className="font-bold text-primary">support@lakkiphones.com</span>.</p>
-            </div>
+            )}
          </div>
       </div>
     </div>

@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { useShop } from '../context/ShopContext';
 import { Navigate } from 'react-router-dom';
@@ -6,9 +7,15 @@ import { User, Package, MapPin, Settings, LogOut, ChevronRight, Box, Trash2, Hom
 import { Address } from '../types';
 
 export const Account: React.FC = () => {
-  const { user, logout, orders, addAddress, removeAddress } = useShop();
+  const { user, logout, orders, addAddress, removeAddress, updateUserProfile } = useShop();
   const [activeTab, setActiveTab] = useState<'profile' | 'orders' | 'addresses'>('orders');
   
+  // Profile Form State
+  const [profileData, setProfileData] = useState({
+     name: user?.name || '',
+     phone: user?.phone || ''
+  });
+
   // Address Form State
   const [showAddressForm, setShowAddressForm] = useState(false);
   const [newAddress, setNewAddress] = useState<Partial<Address>>({
@@ -28,6 +35,10 @@ export const Account: React.FC = () => {
        setShowAddressForm(false);
        setNewAddress({ type: 'Home', street: '', city: '', zip: '', phone: '' });
     }
+  };
+
+  const handleProfileUpdate = () => {
+     updateUserProfile({ name: profileData.name, phone: profileData.phone });
   };
 
   const TabButton = ({ id, icon: Icon, label }: { id: typeof activeTab, icon: any, label: string }) => (
@@ -109,7 +120,7 @@ export const Account: React.FC = () => {
                                   {order.items.map(item => (
                                      <div key={item.id} className="flex items-center gap-4">
                                         <div className="w-16 h-16 bg-gray-50 rounded-lg p-2 border border-gray-200">
-                                           <img src={`https://picsum.photos/seed/${item.imageSeed}/100/100`} className="w-full h-full object-contain" alt={item.name}/>
+                                           <img src={item.image || `https://picsum.photos/seed/${item.imageSeed}/100/100`} className="w-full h-full object-contain" alt={item.name}/>
                                         </div>
                                         <div className="flex-1">
                                            <h4 className="font-semibold text-gray-900">{item.name}</h4>
@@ -139,18 +150,32 @@ export const Account: React.FC = () => {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                          <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
-                            <input type="text" defaultValue={user.name} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg outline-none focus:border-accent" />
+                            <input 
+                                type="text" 
+                                value={profileData.name} 
+                                onChange={e => setProfileData({...profileData, name: e.target.value})}
+                                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg outline-none focus:border-accent" 
+                            />
                          </div>
                          <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
-                            <input type="email" defaultValue={user.email} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg outline-none focus:border-accent" disabled />
+                            <input type="email" value={user.email} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg outline-none focus:border-accent" disabled />
                          </div>
                          <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
-                            <input type="tel" placeholder="+1 (555) 000-0000" className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg outline-none focus:border-accent" />
+                            <input 
+                                type="tel" 
+                                value={profileData.phone}
+                                onChange={e => setProfileData({...profileData, phone: e.target.value})}
+                                placeholder="+965 9999 9999" 
+                                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg outline-none focus:border-accent" 
+                            />
                          </div>
                       </div>
-                      <button className="mt-8 px-6 py-3 bg-primary text-white font-bold rounded-lg hover:bg-gray-800 transition-colors">
+                      <button 
+                        onClick={handleProfileUpdate}
+                        className="mt-8 px-6 py-3 bg-primary text-white font-bold rounded-lg hover:bg-gray-800 transition-colors"
+                      >
                          Save Changes
                       </button>
                    </div>
@@ -192,7 +217,7 @@ export const Account: React.FC = () => {
                                     value={newAddress.phone}
                                     onChange={e => setNewAddress({...newAddress, phone: e.target.value})}
                                     className="w-full p-2.5 border border-gray-300 rounded-lg outline-none focus:border-accent"
-                                    placeholder="+1 234 567 890"
+                                    placeholder="+965 9999 9999"
                                   />
                                </div>
                                <div className="col-span-2">
@@ -203,29 +228,28 @@ export const Account: React.FC = () => {
                                     value={newAddress.street}
                                     onChange={e => setNewAddress({...newAddress, street: e.target.value})}
                                     className="w-full p-2.5 border border-gray-300 rounded-lg outline-none focus:border-accent"
-                                    placeholder="123 Main St, Apt 4B"
+                                    placeholder="Block 4, Street 20"
                                   />
                                </div>
                                <div>
-                                  <label className="block text-sm text-gray-600 mb-1">City</label>
+                                  <label className="block text-sm text-gray-600 mb-1">City / Area</label>
                                   <input 
                                     type="text"
                                     required 
                                     value={newAddress.city}
                                     onChange={e => setNewAddress({...newAddress, city: e.target.value})}
                                     className="w-full p-2.5 border border-gray-300 rounded-lg outline-none focus:border-accent"
-                                    placeholder="New York"
+                                    placeholder="Salmiya"
                                   />
                                </div>
                                <div>
-                                  <label className="block text-sm text-gray-600 mb-1">ZIP Code</label>
+                                  <label className="block text-sm text-gray-600 mb-1">ZIP Code (Optional)</label>
                                   <input 
                                     type="text"
-                                    required 
                                     value={newAddress.zip}
                                     onChange={e => setNewAddress({...newAddress, zip: e.target.value})}
                                     className="w-full p-2.5 border border-gray-300 rounded-lg outline-none focus:border-accent"
-                                    placeholder="10001"
+                                    placeholder=""
                                   />
                                </div>
                                <div className="col-span-2 flex gap-3 mt-2">
@@ -254,7 +278,7 @@ export const Account: React.FC = () => {
                                      {addr.isDefault && <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full font-bold">Default</span>}
                                   </div>
                                   <p className="text-gray-600 text-sm mb-1">{addr.street}</p>
-                                  <p className="text-gray-600 text-sm mb-1">{addr.city}, {addr.zip}</p>
+                                  <p className="text-gray-600 text-sm mb-1">{addr.city}</p>
                                   <p className="text-gray-500 text-xs mt-2">{addr.phone}</p>
                                   <button 
                                     onClick={() => removeAddress(addr.id)}
