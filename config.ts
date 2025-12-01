@@ -5,7 +5,7 @@ export const APP_CONFIG = {
   // --- DATA SOURCE CONFIGURATION ---
   // Set to 'false' to load an empty store for production/real data entry.
   // Set to 'true' to load sample iPhones/Samsungs/etc. for testing.
-  useMockData: true, 
+  useMockData: false, 
   
   storeName: "LAKKI PHONES",
   currency: "KWD",

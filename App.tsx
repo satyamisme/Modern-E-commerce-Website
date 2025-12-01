@@ -8,6 +8,7 @@ import { Toast } from './components/Toast';
 import { BottomNav } from './components/BottomNav';
 import { Footer } from './components/Footer';
 import ScrollToTop from './components/ScrollToTop';
+import { ErrorBoundary } from './components/ErrorBoundary'; // Import ErrorBoundary
 import { Home } from './pages/Home';
 import { ProductDetails } from './pages/ProductDetails';
 import { Checkout } from './pages/Checkout';
@@ -33,46 +34,48 @@ import { NotFound } from './pages/NotFound';
 
 const App: React.FC = () => {
   return (
-    <HashRouter>
-      <ShopProvider>
-        <ScrollToTop />
-        <div className="flex flex-col min-h-screen pb-16 md:pb-0 font-sans">
-          <Navbar />
-          <CartDrawer />
-          <Toast />
-          
-          <main className="flex-grow">
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/shop" element={<Shop />} />
-              <Route path="/categories" element={<CategoriesPage />} />
-              <Route path="/deals" element={<DealsPage />} />
-              <Route path="/product/:id" element={<ProductDetails />} />
-              <Route path="/cart" element={<Cart />} />
-              <Route path="/checkout" element={<Checkout />} />
-              <Route path="/knet-gateway" element={<KnetGateway />} />
-              <Route path="/order-confirmation" element={<OrderConfirmation />} />
-              <Route path="/wishlist" element={<Wishlist />} />
-              <Route path="/compare" element={<Compare />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/register" element={<Register />} />
-              <Route path="/account" element={<Account />} />
-              <Route path="/track-order" element={<TrackOrder />} />
-              <Route path="/admin" element={<AdminDashboard />} />
-              <Route path="/contact" element={<Contact />} />
-              <Route path="/about" element={<About />} />
-              <Route path="/faq" element={<FAQ />} />
-              <Route path="/returns" element={<Returns />} />
-              <Route path="/privacy" element={<Privacy />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </main>
-          
-          <Footer />
-          <BottomNav />
-        </div>
-      </ShopProvider>
-    </HashRouter>
+    <ErrorBoundary>
+      <HashRouter>
+        <ShopProvider>
+          <ScrollToTop />
+          <div className="flex flex-col min-h-screen pb-16 md:pb-0 font-sans">
+            <Navbar />
+            <CartDrawer />
+            <Toast />
+            
+            <main className="flex-grow">
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/shop" element={<Shop />} />
+                <Route path="/categories" element={<CategoriesPage />} />
+                <Route path="/deals" element={<DealsPage />} />
+                <Route path="/product/:id" element={<ProductDetails />} />
+                <Route path="/cart" element={<Cart />} />
+                <Route path="/checkout" element={<Checkout />} />
+                <Route path="/knet-gateway" element={<KnetGateway />} />
+                <Route path="/order-confirmation" element={<OrderConfirmation />} />
+                <Route path="/wishlist" element={<Wishlist />} />
+                <Route path="/compare" element={<Compare />} />
+                <Route path="/login" element={<Login />} />
+                <Route path="/register" element={<Register />} />
+                <Route path="/account" element={<Account />} />
+                <Route path="/track-order" element={<TrackOrder />} />
+                <Route path="/admin" element={<AdminDashboard />} />
+                <Route path="/contact" element={<Contact />} />
+                <Route path="/about" element={<About />} />
+                <Route path="/faq" element={<FAQ />} />
+                <Route path="/returns" element={<Returns />} />
+                <Route path="/privacy" element={<Privacy />} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </main>
+            
+            <Footer />
+            <BottomNav />
+          </div>
+        </ShopProvider>
+      </HashRouter>
+    </ErrorBoundary>
   );
 };
 
