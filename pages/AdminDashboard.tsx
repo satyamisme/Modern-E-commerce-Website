@@ -3,12 +3,11 @@ import React, { useState, useMemo } from 'react';
 import { useShop } from '../context/ShopContext';
 import { Navigate } from 'react-router-dom';
 import { 
-   LayoutDashboard, Package, ShoppingBag, Users, Trash2, Edit, Plus, Save, 
-   Settings as SettingsIcon, TrendingUp, DollarSign, X, Check, Search, Filter,
-   ArrowRight, AlertCircle, RefreshCw, Smartphone, BarChart2, Bell, Truck,
-   CreditCard, FileText, ChevronRight, Download, Upload, Eye, MoreHorizontal,
-   Calendar, Mail, MessageSquare, CheckCircle, Sparkles, LogOut, ChevronLeft,
-   Image as ImageIcon, Globe, Share2, Layers, Monitor, Minimize, Type
+   LayoutDashboard, Package, ShoppingBag, Users, Trash2, Edit, Plus, 
+   Settings as SettingsIcon, TrendingUp, DollarSign, X, Search, Filter,
+   ArrowRight, AlertCircle, RefreshCw, BarChart2, Bell, Truck,
+   FileText, ChevronRight, Download, Upload, Image as ImageIcon, Globe, Share2, Layers, Minimize, Loader2,
+   LogOut, Sparkles, CheckCircle, Menu, MoreVertical
 } from 'lucide-react';
 import { Product, Order } from '../types';
 
@@ -29,6 +28,12 @@ export const AdminDashboard: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'products' | 'orders' | 'customers' | 'inventory' | 'settings'>('dashboard');
   
+  // Search & Filter State
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('All');
+
   // Product Form State
   const [showProductModal, setShowProductModal] = useState(false);
   const [productFormTab, setProductFormTab] = useState<'basic' | 'pricing' | 'media' | 'specs' | 'seo'>('basic');
@@ -43,11 +48,12 @@ export const AdminDashboard: React.FC = () => {
      return <Navigate to="/login" replace />;
   }
 
-  // --- DERIVED DATA ---
+  // --- DERIVED DATA & ANALYTICS ---
   const totalRevenue = orders.reduce((acc, order) => acc + order.total, 0);
   const totalOrders = orders.length;
   const pendingOrdersCount = orders.filter(o => o.status === 'Processing').length;
-  const lowStockProducts = products.filter(p => p.stock < 5 && p.stock > 0).length;
+  const lowStockProductsList = products.filter(p => p.stock < 5 && p.stock > 0);
+  const lowStockProducts = lowStockProductsList.length;
   const outOfStockProducts = products.filter(p => p.stock === 0).length;
 
   // Derive Customers from Orders
@@ -75,6 +81,27 @@ export const AdminDashboard: React.FC = () => {
      });
      return Array.from(uniqueCustomers.values());
   }, [orders]);
+
+  // --- FILTERED LISTS ---
+  const filteredProducts = products.filter(p => {
+    const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          p.brand.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          p.id.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = selectedCategoryFilter === 'All' || p.category === selectedCategoryFilter;
+    return matchesSearch && matchesCategory;
+  });
+
+  const filteredOrders = orders.filter(o => 
+    o.id.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    o.customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    o.customer.email.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const filteredCustomers = customers.filter((c: any) => 
+    c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    c.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    c.phone.includes(searchTerm)
+  );
 
   // --- ACTIONS ---
 
@@ -116,7 +143,8 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const handleQuickStockUpdate = (product: Product, amount: number) => {
-     updateProduct({ ...product, stock: product.stock + amount });
+     updateProduct({ ...product, stock: Math.max(0, product.stock + amount) });
+     showToast(`Stock updated for ${product.name}`, 'success');
   };
 
   const handleOrderStatusChange = (orderId: string, currentStatus: Order['status']) => {
@@ -130,21 +158,21 @@ export const AdminDashboard: React.FC = () => {
   };
   
   // Image Upload Handling
-  const handleImageDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    // In a real app, we would process File objects. Here we mock it with object URLs
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) {
-       // Mock URL creation
-       const newImages = files.map(file => URL.createObjectURL(file));
+  const handleImageSelect = (files: FileList | null) => {
+    if (files && files.length > 0) {
+       const newImages = Array.from(files).map(file => URL.createObjectURL(file));
        setEditingProduct(prev => ({
           ...prev,
           images: [...(prev.images || []), ...newImages]
        }));
        showToast(`${files.length} images added`, 'success');
     }
+  };
+
+  const handleImageDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    handleImageSelect(e.dataTransfer.files);
   };
 
   const handleMockBulkProcess = (type: string) => {
@@ -169,8 +197,41 @@ export const AdminDashboard: React.FC = () => {
      setEditingProduct(prev => ({ ...prev, specs: newSpecs }));
   };
 
+  const exportToCSV = (data: any[], filename: string) => {
+    if (!data.length) {
+        showToast('No data to export', 'error');
+        return;
+    }
+    
+    // Flatten data slightly for better CSV output (handling objects)
+    const flattenedData = data.map(row => {
+        const flatRow: any = { ...row };
+        // Simplify nested objects for CSV
+        if (flatRow.specs) flatRow.specs = JSON.stringify(flatRow.specs).replace(/,/g, ';');
+        if (flatRow.images) flatRow.images = flatRow.images.length;
+        if (flatRow.customer && typeof flatRow.customer === 'object') {
+             flatRow.customerName = flatRow.customer.name;
+             flatRow.customerEmail = flatRow.customer.email;
+             delete flatRow.customer;
+             delete flatRow.items; // Too complex for simple CSV
+        }
+        return flatRow;
+    });
+
+    const headers = Object.keys(flattenedData[0]).join(',');
+    const rows = flattenedData.map(row => Object.values(row).map(v => `"${v}"`).join(',')).join('\n');
+    const csvContent = "data:text/csv;charset=utf-8," + headers + '\n' + rows;
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast(`${filename} downloaded`, 'success');
+  };
+
   // --- RENDER HELPERS ---
-  
   const StatCard = ({ icon: Icon, color, label, value, subValue, subLabel, trend }: any) => (
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-lg transition-all group">
          <div className="flex justify-between items-start mb-4">
@@ -279,20 +340,61 @@ export const AdminDashboard: React.FC = () => {
                 </div>
              </div>
              
-             <div className="flex items-center gap-4">
+             <div className="flex items-center gap-4 relative">
                 <div className="relative group">
                    <input 
-                     type="text" 
-                     placeholder="Quick Search..." 
+                     type="text"
+                     value={searchTerm}
+                     onChange={(e) => setSearchTerm(e.target.value)}
+                     placeholder={`Search ${activeTab}...`}
                      className="pl-10 pr-4 py-2.5 w-64 bg-white border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm group-hover:shadow-md" 
                    />
                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-hover:text-primary transition-colors" />
                 </div>
                 
-                <button className="p-2.5 bg-white border border-gray-200 rounded-xl text-gray-500 hover:text-primary hover:border-primary relative transition-all shadow-sm hover:shadow-md">
+                <button 
+                  onClick={() => setShowNotifications(!showNotifications)}
+                  className="p-2.5 bg-white border border-gray-200 rounded-xl text-gray-500 hover:text-primary hover:border-primary relative transition-all shadow-sm hover:shadow-md"
+                >
                    <Bell size={20} />
-                   <span className="absolute top-2 right-2.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
+                   {(pendingOrdersCount > 0 || lowStockProducts > 0) && (
+                      <span className="absolute top-2 right-2.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
+                   )}
                 </button>
+
+                {/* Notifications Dropdown */}
+                {showNotifications && (
+                   <div className="absolute top-14 right-0 w-80 bg-white rounded-2xl shadow-xl border border-gray-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2">
+                      <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                         <span className="font-bold text-gray-900 text-sm">Notifications</span>
+                         <button onClick={() => setShowNotifications(false)} className="text-xs text-gray-500 hover:text-gray-900">Close</button>
+                      </div>
+                      <div className="max-h-80 overflow-y-auto custom-scrollbar">
+                           {lowStockProductsList.map(p => (
+                              <div key={`alert-${p.id}`} className="p-4 border-b border-gray-50 hover:bg-gray-50 flex gap-3 transition-colors">
+                                 <div className="p-2 bg-red-50 text-red-500 rounded-lg h-fit"><AlertCircle size={16}/></div>
+                                 <div>
+                                    <p className="text-sm font-bold text-gray-900">Low Stock Alert</p>
+                                    <p className="text-xs text-gray-500">{p.name} has only <span className="font-bold text-red-600">{p.stock}</span> units left.</p>
+                                 </div>
+                              </div>
+                           ))}
+                           {orders.slice(0, 3).map(o => (
+                              <div key={`notif-${o.id}`} className="p-4 border-b border-gray-50 hover:bg-gray-50 flex gap-3 transition-colors">
+                                 <div className="p-2 bg-blue-50 text-blue-500 rounded-lg h-fit"><ShoppingBag size={16}/></div>
+                                 <div>
+                                    <p className="text-sm font-bold text-gray-900">New Order Received</p>
+                                    <p className="text-xs text-gray-500">{o.customer.name} placed order #{o.id}</p>
+                                    <p className="text-[10px] text-gray-400 mt-1">{o.date}</p>
+                                 </div>
+                              </div>
+                           ))}
+                           {lowStockProducts === 0 && orders.length === 0 && (
+                              <div className="p-8 text-center text-gray-500 text-sm">No new notifications</div>
+                           )}
+                      </div>
+                   </div>
+                )}
              </div>
           </header>
 
@@ -397,12 +499,18 @@ export const AdminDashboard: React.FC = () => {
           {activeTab === 'products' && (
              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 {/* Product Command Toolbar */}
-                <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-wrap gap-4 justify-between items-center">
+                <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col md:flex-row flex-wrap gap-4 justify-between items-center">
                    <div className="flex gap-2">
-                      <button className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold text-gray-700 hover:bg-gray-100 flex items-center gap-2 transition-colors">
+                      <button 
+                        onClick={() => setShowFilterMenu(!showFilterMenu)}
+                        className={`px-4 py-2.5 border rounded-xl text-sm font-bold flex items-center gap-2 transition-colors ${showFilterMenu ? 'bg-blue-50 border-blue-200 text-primary' : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100'}`}
+                      >
                          <Filter size={16}/> Filter
                       </button>
-                      <button className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold text-gray-700 hover:bg-gray-100 flex items-center gap-2 transition-colors">
+                      <button 
+                        onClick={() => exportToCSV(filteredProducts, 'products_export.csv')}
+                        className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold text-gray-700 hover:bg-gray-100 flex items-center gap-2 transition-colors"
+                      >
                          <Download size={16}/> Export
                       </button>
                    </div>
@@ -421,6 +529,35 @@ export const AdminDashboard: React.FC = () => {
                    </div>
                 </div>
 
+                {/* Filter Menu */}
+                {showFilterMenu && (
+                   <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex gap-4 animate-in slide-in-from-top-2">
+                      <div>
+                         <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Category</label>
+                         <select 
+                            value={selectedCategoryFilter}
+                            onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+                            className="p-2 border border-gray-200 rounded-lg text-sm bg-gray-50 outline-none focus:border-primary"
+                         >
+                            <option value="All">All Categories</option>
+                            <option value="Smartphones">Smartphones</option>
+                            <option value="Tablets">Tablets</option>
+                            <option value="Wearables">Wearables</option>
+                            <option value="Audio">Audio</option>
+                            <option value="Accessories">Accessories</option>
+                         </select>
+                      </div>
+                      <div className="flex items-end">
+                         <button 
+                           onClick={() => setSelectedCategoryFilter('All')}
+                           className="text-xs text-red-500 font-bold hover:underline mb-2"
+                         >
+                            Reset Filters
+                         </button>
+                      </div>
+                   </div>
+                )}
+
                 <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
                    <table className="w-full text-left">
                       <thead className="bg-gray-50/50 text-gray-400 text-[10px] uppercase font-bold tracking-wider">
@@ -434,7 +571,7 @@ export const AdminDashboard: React.FC = () => {
                          </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
-                         {products.map(product => (
+                         {filteredProducts.map(product => (
                             <tr key={product.id} className="hover:bg-gray-50/80 group transition-colors">
                                <td className="p-5"><input type="checkbox" className="rounded border-gray-300"/></td>
                                <td className="p-5">
@@ -495,7 +632,7 @@ export const AdminDashboard: React.FC = () => {
              <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 h-[calc(100vh-140px)]">
                 <div className="flex gap-6 overflow-x-auto pb-6 h-full">
                     {['Processing', 'Shipped', 'Delivered', 'Cancelled'].map((status) => {
-                        const statusOrders = orders.filter(o => o.status === status);
+                        const statusOrders = filteredOrders.filter(o => o.status === status);
                         return (
                            <div key={status} className="min-w-[320px] flex-1 flex flex-col h-full">
                               <div className="flex items-center justify-between mb-4 px-2">
@@ -508,7 +645,7 @@ export const AdminDashboard: React.FC = () => {
                               <div className="bg-gray-100/50 rounded-2xl p-3 flex-1 overflow-y-auto border border-gray-100/50 space-y-3 custom-scrollbar">
                                     {statusOrders.length === 0 && (
                                        <div className="h-24 flex items-center justify-center text-gray-400 text-sm italic border-2 border-dashed border-gray-200 rounded-xl">
-                                          No orders
+                                          {searchTerm ? 'No matches' : 'No orders'}
                                        </div>
                                     )}
                                     {statusOrders.map(order => (
@@ -552,7 +689,12 @@ export const AdminDashboard: React.FC = () => {
                <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
                   <div className="p-6 border-b border-gray-100 flex justify-between items-center">
                      <h3 className="font-bold text-lg text-gray-900">Customer Database</h3>
-                     <button className="px-4 py-2 bg-gray-50 text-gray-600 text-sm font-bold rounded-lg hover:bg-gray-100">Export List</button>
+                     <button 
+                        onClick={() => exportToCSV(filteredCustomers, 'customers_export.csv')}
+                        className="px-4 py-2 bg-gray-50 text-gray-600 text-sm font-bold rounded-lg hover:bg-gray-100 flex items-center gap-2"
+                     >
+                        <Download size={16}/> Export List
+                     </button>
                   </div>
                   <table className="w-full text-left">
                      <thead className="bg-gray-50/50 text-gray-400 text-[10px] uppercase font-bold tracking-wider">
@@ -566,7 +708,7 @@ export const AdminDashboard: React.FC = () => {
                         </tr>
                      </thead>
                      <tbody className="divide-y divide-gray-50">
-                        {customers.map((cust: any) => (
+                        {filteredCustomers.map((cust: any) => (
                            <tr key={cust.id} className="hover:bg-gray-50/50">
                               <td className="p-5">
                                  <div className="flex items-center gap-3">
@@ -616,9 +758,10 @@ export const AdminDashboard: React.FC = () => {
                  <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
                      <div className="p-6 border-b border-gray-100 flex justify-between items-center">
                          <h3 className="font-bold text-lg text-slate-900">Stock Management</h3>
+                         {searchTerm && <span className="text-xs text-primary font-bold bg-blue-50 px-2 py-1 rounded-full">Searching: "{searchTerm}"</span>}
                      </div>
                      <div className="divide-y divide-gray-100">
-                         {products.map(p => (
+                         {filteredProducts.map(p => (
                              <div key={p.id} className="p-4 flex items-center justify-between hover:bg-gray-50">
                                  <div className="flex items-center gap-4">
                                      <div className={`p-2 rounded-lg ${p.stock === 0 ? 'bg-red-50 text-red-600' : p.stock < 5 ? 'bg-orange-50 text-orange-600' : 'bg-gray-50 text-gray-400'}`}>
@@ -844,11 +987,7 @@ export const AdminDashboard: React.FC = () => {
                                 <p className="text-sm text-gray-500 mb-4">or click to browse files</p>
                                 <label className="inline-block px-6 py-2 bg-white border border-gray-200 rounded-lg text-sm font-bold text-gray-700 shadow-sm hover:bg-gray-50 cursor-pointer">
                                    Select Files
-                                   <input type="file" multiple className="hidden" onChange={(e) => {
-                                      // Simulate drop
-                                      const dummyEvent = { dataTransfer: { files: e.target.files } } as any;
-                                      handleImageDrop(dummyEvent);
-                                   }}/>
+                                   <input type="file" multiple className="hidden" onChange={(e) => handleImageSelect(e.target.files)}/>
                                 </label>
                              </div>
 
@@ -886,7 +1025,7 @@ export const AdminDashboard: React.FC = () => {
                                      disabled={isProcessingImages}
                                      className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2"
                                    >
-                                      {isProcessingImages ? <RefreshCw size={14} className="animate-spin"/> : <Minimize size={14}/>} Resize for Web
+                                      {isProcessingImages ? <Loader2 size={14} className="animate-spin"/> : <Minimize size={14}/>} Resize for Web
                                    </button>
                                    <button 
                                      type="button"
@@ -894,7 +1033,7 @@ export const AdminDashboard: React.FC = () => {
                                      disabled={isProcessingImages}
                                      className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2"
                                    >
-                                      {isProcessingImages ? <RefreshCw size={14} className="animate-spin"/> : <Layers size={14}/>} Generate Thumbnails
+                                      {isProcessingImages ? <Loader2 size={14} className="animate-spin"/> : <Layers size={14}/>} Generate Thumbnails
                                    </button>
                                 </div>
                              </div>
