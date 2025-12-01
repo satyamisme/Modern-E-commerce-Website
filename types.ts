@@ -163,7 +163,7 @@ export interface Order {
   total: number;
   status: 'New' | 'Fraud Scan' | 'Processing' | 'Picking' | 'QC' | 'Shipping' | 'Delivered' | 'Cancelled' | 'Returned';
   paymentStatus: 'Pending' | 'Paid' | 'Failed';
-  paymentMethod: 'KNET' | 'Credit Card';
+  paymentMethod: 'KNET' | 'Credit Card' | 'WhatsApp Checkout';
   items: CartItem[];
   fraudScore?: number;
   shopId?: string; // Fulfilled by
@@ -205,6 +205,7 @@ export interface AppSettings {
   taxRate: number;
   enableKnet: boolean;
   enableCreditCard: boolean;
+  enableWhatsAppPayment: boolean;
   deliveryFee: number;
   freeShippingThreshold: number;
   aiProvider?: 'google' | 'openai' | 'grok' | 'perplexity' | 'deepseek';

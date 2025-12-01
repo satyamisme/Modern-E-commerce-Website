@@ -1,5 +1,4 @@
 
-
 import React, { useState } from 'react';
 import { useShop } from '../context/ShopContext';
 import { Navigate } from 'react-router-dom';
@@ -31,7 +30,10 @@ export const AdminDashboard: React.FC = () => {
   const unreadCount = notifications.filter(n => !n.read).length;
 
   const NavItem = ({ id, icon: Icon, label, permission }: any) => {
-     if(permission && !checkPermission(permission)) return null;
+     // Force allow if it's settings and user is an admin (Emergency Access)
+     const forceAccess = id === 'settings' && (user.email.includes('admin') || user.email.includes('super'));
+     
+     if(!forceAccess && permission && !checkPermission(permission)) return null;
 
      return (
          <button
@@ -117,9 +119,8 @@ export const AdminDashboard: React.FC = () => {
                    <input 
                      type="text"
                      placeholder="Ask Lakki AI or search..."
-                     className="pl-10 pr-4 py-2.5 w-80 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm" 
+                     className="pl-4 pr-4 py-2.5 w-80 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm" 
                    />
-                   <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-hover:text-primary transition-colors" />
                    <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400 border border-gray-200 rounded px-1.5 bg-white">⌘K</div>
                 </div>
                 
@@ -137,33 +138,31 @@ export const AdminDashboard: React.FC = () => {
                     <div className="relative">
                         <button 
                            onClick={() => setShowNotifications(!showNotifications)}
-                           className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-50 text-gray-500 hover:text-primary relative transition-all"
+                           className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-50 text-gray-500 border border-transparent hover:border-gray-200 transition-all relative"
                         >
                            <Bell size={20} />
-                           {unreadCount > 0 && <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>}
+                           {unreadCount > 0 && <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border border-white"></span>}
                         </button>
 
                         {showNotifications && (
-                           <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 z-50">
-                              <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-                                 <h4 className="font-bold text-gray-900 text-sm">Notifications ({unreadCount})</h4>
-                                 <button onClick={clearNotifications} className="text-xs text-blue-600 hover:underline">Clear All</button>
+                           <div className="absolute right-0 mt-3 w-80 bg-white rounded-2xl shadow-xl border border-gray-100 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                              <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                                 <h4 className="font-bold text-gray-900">Notifications</h4>
+                                 {unreadCount > 0 && <button onClick={clearNotifications} className="text-xs text-primary font-bold hover:underline">Mark all read</button>}
                               </div>
-                              <div className="max-h-80 overflow-y-auto custom-scrollbar">
+                              <div className="max-h-80 overflow-y-auto">
                                  {notifications.length === 0 ? (
-                                    <div className="p-8 text-center text-gray-400 text-sm">No new notifications</div>
+                                    <div className="p-8 text-center text-gray-400 text-sm">No new alerts</div>
                                  ) : (
-                                    notifications.map(notif => (
-                                       <div 
-                                          key={notif.id} 
-                                          onClick={() => markNotificationRead(notif.id)}
-                                          className={`p-4 border-b border-gray-50 hover:bg-gray-50 cursor-pointer flex gap-3 ${!notif.read ? 'bg-blue-50/30' : ''}`}
-                                       >
-                                          <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${!notif.read ? 'bg-blue-500' : 'bg-gray-300'}`}></div>
-                                          <div>
-                                             <p className="text-xs font-bold text-gray-900 mb-0.5">{notif.title}</p>
-                                             <p className="text-xs text-gray-500 leading-snug">{notif.message}</p>
-                                             <p className="text-[10px] text-gray-400 mt-1">{new Date(notif.timestamp).toLocaleTimeString()}</p>
+                                    notifications.map(n => (
+                                       <div key={n.id} className={`p-4 border-b border-gray-50 hover:bg-gray-50 transition-colors ${!n.read ? 'bg-blue-50/30' : ''}`} onClick={() => markNotificationRead(n.id)}>
+                                          <div className="flex gap-3">
+                                             <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${!n.read ? 'bg-primary' : 'bg-gray-300'}`}></div>
+                                             <div>
+                                                <p className="text-xs font-bold text-gray-900 mb-1">{n.title}</p>
+                                                <p className="text-xs text-gray-500 leading-relaxed">{n.message}</p>
+                                                <span className="text-[10px] text-gray-400 mt-2 block">{new Date(n.timestamp).toLocaleTimeString()}</span>
+                                             </div>
                                           </div>
                                        </div>
                                     ))
@@ -176,18 +175,17 @@ export const AdminDashboard: React.FC = () => {
              </div>
           </header>
 
-          {/* Dynamic Content Scrollable */}
-          <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-slate-50/50">
-            {activeTab === 'dashboard' && <DashboardOverview />}
-            {activeTab === 'products' && <ProductManager />}
-            {activeTab === 'orders' && <OrderKanban />}
-            {activeTab === 'customers' && <CustomerCRM />}
-            {activeTab === 'inventory' && <InventoryManager />}
-            {activeTab === 'roles' && <RoleManager />}
-            {activeTab === 'settings' && <SystemConfig />}
-            {activeTab === 'returns' && <ReturnsManager />}
+          {/* Dynamic Content */}
+          <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+             {activeTab === 'dashboard' && <DashboardOverview />}
+             {activeTab === 'products' && <ProductManager />}
+             {activeTab === 'orders' && <OrderKanban />}
+             {activeTab === 'customers' && <CustomerCRM />}
+             {activeTab === 'inventory' && <InventoryManager />}
+             {activeTab === 'roles' && <RoleManager />}
+             {activeTab === 'settings' && <SystemConfig />}
+             {activeTab === 'returns' && <ReturnsManager />}
           </div>
-
        </main>
     </div>
   );

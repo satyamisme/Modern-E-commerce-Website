@@ -23,7 +23,7 @@ export const Login: React.FC = () => {
     setTimeout(() => {
        login(emailToUse);
        setIsLoading(false);
-       if (emailToUse === 'admin@lakkiphones.com') {
+       if (emailToUse.includes('admin') || emailToUse.includes('super')) {
           navigate('/admin');
        } else {
           navigate('/account');
@@ -33,7 +33,8 @@ export const Login: React.FC = () => {
 
   const handleAdminShortcut = () => {
     // Fill credentials and auto-submit
-    const adminEmail = 'admin@lakkiphones.com';
+    // CHANGED: Use super_admin to ensure full access permissions
+    const adminEmail = 'super_admin@lakkiphones.com';
     setEmail(adminEmail);
     setPassword('admin123'); // Mock password visualization
     performLogin(adminEmail);
@@ -112,9 +113,9 @@ export const Login: React.FC = () => {
                   onClick={handleAdminShortcut}
                   className="w-full py-3 bg-gradient-to-r from-purple-500 to-indigo-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 text-sm transform hover:scale-[1.02]"
                 >
-                   <ShieldCheck size={18} /> Quick Admin Login
+                   <ShieldCheck size={18} /> Quick Super Admin Login
                 </button>
-                <p className="text-center text-xs text-gray-400 mt-2">For testing purposes only</p>
+                <p className="text-center text-xs text-gray-400 mt-2">Grants full system access for testing</p>
              </div>
 
              <div className="mt-8 text-center">

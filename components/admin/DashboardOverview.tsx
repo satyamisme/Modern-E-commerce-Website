@@ -1,13 +1,14 @@
 
 import React, { useState, useEffect } from 'react';
-import { DollarSign, ShoppingBag, Package, Users, TrendingUp, ArrowUpRight, Activity, Zap, AlertTriangle, Lightbulb, TrendingDown, Target } from 'lucide-react';
+import { DollarSign, ShoppingBag, Package, Users, TrendingUp, ArrowUpRight, Activity, Zap, AlertTriangle, Lightbulb, TrendingDown, Target, Database, ArrowRight, RefreshCw, CheckCircle } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts';
 import { useShop } from '../../context/ShopContext';
 
 const COLORS = ['#1e3a8a', '#d4af37', '#ff6b6b', '#10B981', '#8B5CF6'];
 
 export const DashboardOverview: React.FC = () => {
-  const { orders, products, appSettings } = useShop();
+  const { orders, products, appSettings, offlineReason, isOffline, retryConnection } = useShop();
+  const [isVerifying, setIsVerifying] = useState(false);
 
   // Metrics Calculation
   const totalRevenue = orders.reduce((acc, o) => acc + o.total, 0);
@@ -29,6 +30,23 @@ export const DashboardOverview: React.FC = () => {
     }, 5000);
     return () => clearInterval(timer);
   }, []);
+
+  // Auto-Verify when Schema is missing
+  useEffect(() => {
+    let interval: any;
+    if (isOffline && offlineReason === 'SCHEMA') {
+        interval = setInterval(() => {
+            retryConnection();
+        }, 3000); // Check every 3 seconds to see if user ran the script
+    }
+    return () => clearInterval(interval);
+  }, [isOffline, offlineReason, retryConnection]);
+
+  const handleVerify = async () => {
+      setIsVerifying(true);
+      await retryConnection();
+      setIsVerifying(false);
+  };
 
   // Mock Predictive Data
   const revenueForecastData = [
@@ -73,6 +91,37 @@ export const DashboardOverview: React.FC = () => {
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       
+      {/* Schema Missing Alert */}
+      {isOffline && offlineReason === 'SCHEMA' && (
+          <div className="bg-red-600 rounded-2xl shadow-lg p-6 text-white flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                  <div className="p-3 bg-white/10 rounded-xl relative">
+                      <Database size={24} className="text-white"/>
+                      <div className="absolute top-0 right-0 w-3 h-3 bg-yellow-400 rounded-full animate-ping"></div>
+                  </div>
+                  <div>
+                      <h3 className="font-bold text-lg">Database Tables Created?</h3>
+                      <p className="text-red-100 text-sm">We are checking for tables... Run the SQL script if this doesn't disappear.</p>
+                  </div>
+              </div>
+              <div className="flex gap-3">
+                  <button 
+                    onClick={() => document.getElementById('settings')?.click()} 
+                    className="px-6 py-2 bg-white/10 border border-white/20 text-white font-bold rounded-xl hover:bg-white/20 transition-colors flex items-center gap-2 text-sm"
+                  >
+                      View Script
+                  </button>
+                  <button 
+                    onClick={handleVerify} 
+                    className="px-6 py-2 bg-white text-red-600 font-bold rounded-xl shadow-lg hover:bg-red-50 transition-colors flex items-center gap-2 text-sm"
+                  >
+                      {isVerifying ? <RefreshCw className="animate-spin" size={16}/> : <CheckCircle size={16}/>} 
+                      Verify Now
+                  </button>
+              </div>
+          </div>
+      )}
+
       {/* AI Insights Carousel */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-1">
         <div className={`flex items-center gap-4 p-4 rounded-xl transition-colors duration-500 ${insights[currentInsight].color}`}>

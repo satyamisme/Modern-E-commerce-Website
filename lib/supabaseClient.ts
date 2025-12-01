@@ -2,9 +2,15 @@
 import { createClient } from '@supabase/supabase-js';
 import { APP_CONFIG } from '../config';
 
+// Check for override in local storage (Admin configured)
+const storedConfig = typeof window !== 'undefined' ? localStorage.getItem('lumina_db_config') : null;
+const customDB = storedConfig ? JSON.parse(storedConfig) : null;
+
 // Safe access to environment variables or hardcoded values provided by user
-const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL || 'https://wnumllyicvloascctlqk.supabase.co';
-const SUPABASE_ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndudW1sbHlpY3Zsb2FzY2N0bHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0Nzg5MjksImV4cCI6MjA4MDA1NDkyOX0.WpcfkD5qRlGBLi1q8PhSfJiD5wMskuvY0QbF_53xeV0';
+// Prioritize Custom (Admin Panel) -> Env Vars (Deployment) -> Explicit Hardcoded (User Provided)
+// This ensures the app works in all environments: Local, Cloud, and Demo.
+const SUPABASE_URL = customDB?.url || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://wnumllyicvloascctlqk.supabase.co';
+const SUPABASE_ANON_KEY = customDB?.key || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndudW1sbHlpY3Zsb2FzY2N0bHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0Nzg5MjksImV4cCI6MjA4MDA1NDkyOX0.WpcfkD5qRlGBLi1q8PhSfJiD5wMskuvY0QbF_53xeV0';
 
 // Create client
 export const supabase = createClient(
@@ -22,31 +28,71 @@ export const isSupabaseConfigured = () => {
   );
 };
 
-// Helper to check connection
-export const checkConnection = async () => {
+// Return types for diagnosis
+type ConnectionStatus = {
+  success: boolean;
+  message?: string;
+  code?: string;
+};
+
+// Helper to check connection with detailed diagnostics
+export const diagnoseConnection = async (): Promise<ConnectionStatus> => {
   try {
-    if (APP_CONFIG.useMockData) return true;
+    if (APP_CONFIG.useMockData) return { success: true, message: "Mock Mode" };
     
-    // If keys are missing/placeholder, fail fast without network request
     if (!isSupabaseConfigured()) {
-      console.warn("Supabase not configured. Missing valid URL or Key.");
-      return false;
+      return { success: false, message: "Missing API Credentials" };
     }
 
-    // Attempt simple query
+    // 1. Check Auth / Reachability (Does not require tables)
+    // This confirms the URL and Key are correct.
+    const { error: authError } = await supabase.auth.getSession();
+    if (authError) {
+       console.error("Supabase Auth Check Failed:", authError);
+       return { success: false, message: `Auth Failed: ${authError.message}`, code: 'AUTH_FAIL' };
+    }
+
+    // 2. Check Database Schema (Requires 'app_settings' table)
     const { data, error } = await supabase.from('app_settings').select('store_name').maybeSingle();
     
     if (error) {
-      // If table doesn't exist (error code 42P01) or other DB error, consider connection failed
-      // This triggers fallback to local storage
-      console.warn("Supabase Connection Check Failed:", error.message);
-      return false;
+      // Code 42P01 means "relation does not exist" -> Connected, but tables missing.
+      if (error.code === '42P01') {
+         return { success: false, message: "Tables Missing (Run SQL Schema)", code: 'NO_SCHEMA' };
+      }
+      return { success: false, message: `DB Error: ${error.message}`, code: error.code };
     }
     
-    // If we get here, connection is good (even if data is null)
-    return true;
+    return { success: true, message: "Connected" };
   } catch (e: any) {
-    console.error("Supabase Connection Exception:", e.message || JSON.stringify(e));
-    return false;
+    return { success: false, message: `Exception: ${e.message}`, code: 'EXCEPTION' };
   }
 };
+
+// Backward compatible check
+export const checkConnection = async () => {
+  const result = await diagnoseConnection();
+  return result.success;
+};
+
+// --- Dynamic Config Helpers ---
+
+export const updateDatabaseConfig = (url: string, key: string) => {
+  if (!url || !key) return;
+  // Trim whitespace just in case of copy-paste errors
+  const cleanUrl = url.trim();
+  const cleanKey = key.trim();
+  localStorage.setItem('lumina_db_config', JSON.stringify({ url: cleanUrl, key: cleanKey }));
+  window.location.reload();
+};
+
+export const resetDatabaseConfig = () => {
+  localStorage.removeItem('lumina_db_config');
+  window.location.reload();
+};
+
+export const getDatabaseConfig = () => ({
+  url: SUPABASE_URL,
+  key: SUPABASE_ANON_KEY,
+  isCustom: !!customDB
+});

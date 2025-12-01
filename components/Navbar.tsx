@@ -231,14 +231,8 @@ export const Navbar: React.FC = () => {
                      onFocus={() => setShowSuggestions(true)}
                      onKeyDown={(e) => e.key === 'Enter' && handleSearchSubmit()}
                      placeholder="Search for products, brands..."
-                     className="w-full pl-5 pr-12 py-2.5 bg-white/10 border border-white/10 rounded-full text-white placeholder-blue-200/60 focus:bg-white focus:text-gray-900 focus:placeholder-gray-400 focus:border-white transition-all duration-300 text-sm outline-none"
+                     className="w-full pl-5 pr-5 py-2.5 bg-white/10 border border-white/10 rounded-full text-white placeholder-blue-200/60 focus:bg-white focus:text-gray-900 focus:placeholder-gray-400 focus:border-white transition-all duration-300 text-sm outline-none"
                    />
-                   <button 
-                     onClick={handleSearchSubmit}
-                     className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 bg-secondary text-primary rounded-full hover:bg-white transition-all shadow-sm"
-                   >
-                     <Search size={16} strokeWidth={2.5} />
-                   </button>
 
                    {/* Suggestions Dropdown */}
                    {showSuggestions && searchQuery.length > 1 && (

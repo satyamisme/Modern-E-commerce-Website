@@ -1,14 +1,15 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { useShop } from '../context/ShopContext';
 import { useNavigate } from 'react-router-dom';
-import { Wallet, MapPin, CreditCard, CheckCircle, Package, ArrowRight, User, Truck, ShieldCheck, ChevronRight } from 'lucide-react';
+import { Wallet, MapPin, CreditCard, CheckCircle, Package, ArrowRight, User, Truck, ShieldCheck, ChevronRight, MessageCircle } from 'lucide-react';
 
 export const Checkout: React.FC = () => {
-  const { cart, totalAmount, appSettings, user } = useShop();
+  const { cart, totalAmount, appSettings, user, createOrder, clearCart } = useShop();
   const navigate = useNavigate();
   const [step, setStep] = useState<1 | 2 | 3>(1);
   
-  const [paymentMethod, setPaymentMethod] = useState<'knet' | 'credit'>('knet');
+  const [paymentMethod, setPaymentMethod] = useState<'knet' | 'credit' | 'whatsapp'>('knet');
   const [formData, setFormData] = useState({
      fname: user?.name.split(' ')[0] || '', 
      lname: user?.name.split(' ').slice(1).join(' ') || '', 
@@ -19,6 +20,13 @@ export const Checkout: React.FC = () => {
 
   const finalTotal = totalAmount + (totalAmount >= appSettings.freeShippingThreshold ? 0 : appSettings.deliveryFee);
 
+  // Initialize Payment Method Fallback
+  useEffect(() => {
+     if (appSettings.enableKnet) setPaymentMethod('knet');
+     else if (appSettings.enableCreditCard) setPaymentMethod('credit');
+     else if (appSettings.enableWhatsAppPayment) setPaymentMethod('whatsapp');
+  }, [appSettings]);
+
   const handleNextStep = (e: React.FormEvent) => {
      e.preventDefault();
      setStep(prev => prev < 3 ? prev + 1 as any : prev);
@@ -28,19 +36,64 @@ export const Checkout: React.FC = () => {
   const handlePlaceOrder = () => {
      // Construct full address string
      const fullAddress = `${formData.street}, Block ${formData.block}, ${formData.area}, ${formData.governorate}`;
+     const customerName = `${formData.fname} ${formData.lname}`;
      
      // Save checkout details to session storage
      const checkoutData = {
         customer: {
-           name: `${formData.fname} ${formData.lname}`,
+           name: customerName,
            email: formData.email,
            phone: formData.phone,
            address: fullAddress
         },
         paymentMethod
      };
-     sessionStorage.setItem('pendingCheckout', JSON.stringify(checkoutData));
+     
+     // WHATSAPP CHECKOUT LOGIC
+     if (paymentMethod === 'whatsapp') {
+         // 1. Create the order internally
+         const orderRef = `ORD-${Date.now().toString().slice(-6)}`;
+         
+         const newOrder = createOrder({
+            total: finalTotal,
+            paymentMethod: 'WhatsApp Checkout',
+            items: [...cart],
+            customer: checkoutData.customer
+         });
 
+         // 2. Build the Message
+         const phone = appSettings.supportPhone.replace(/[^0-9]/g, '');
+         const itemsList = cart.map(i => `- ${i.quantity}x ${i.name} (${i.selectedColor || 'Std'}, ${i.selectedStorage || 'Std'})`).join('\n');
+         
+         const message = `*New Order: ${orderRef}*\n` +
+                         `------------------\n` +
+                         `*Customer:* ${customerName}\n` +
+                         `*Phone:* ${formData.phone}\n` +
+                         `*Address:* ${fullAddress}\n\n` +
+                         `*Items:*\n${itemsList}\n\n` +
+                         `*Total Amount: ${finalTotal} ${appSettings.currency}*\n` +
+                         `------------------\n` +
+                         `Please confirm payment method and delivery time.`;
+
+         const whatsappUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+         
+         // 3. Clear Cart & Redirect
+         clearCart();
+         
+         // Open WhatsApp in new tab
+         window.open(whatsappUrl, '_blank');
+         
+         // Navigate to Order Confirmation (so they see success in app)
+         const successParams = new URLSearchParams();
+         successParams.append('ref', orderRef);
+         successParams.append('status', 'success');
+         successParams.append('txId', 'WA-' + Date.now());
+         navigate(`/order-confirmation?${successParams.toString()}`);
+         return;
+     }
+
+     // KNET / CREDIT CARD CHECKOUT LOGIC
+     sessionStorage.setItem('pendingCheckout', JSON.stringify(checkoutData));
      const orderRef = `ORD-${Date.now()}`;
      navigate(`/knet-gateway?amount=${finalTotal}&ref=${orderRef}`);
   };
@@ -168,6 +221,12 @@ export const Checkout: React.FC = () => {
                      </div>
 
                      <div className="space-y-4 mb-10">
+                        {!appSettings.enableKnet && !appSettings.enableCreditCard && !appSettings.enableWhatsAppPayment && (
+                           <div className="p-6 bg-red-50 border border-red-200 rounded-2xl text-red-700 text-center">
+                              No payment methods are currently enabled. Please contact support.
+                           </div>
+                        )}
+
                         {appSettings.enableKnet && (
                            <label 
                               onClick={() => setPaymentMethod('knet')}
@@ -202,6 +261,23 @@ export const Checkout: React.FC = () => {
                               <CreditCard size={24} className="text-gray-400 group-hover:text-primary transition-colors" />
                            </label>
                         )}
+                        {appSettings.enableWhatsAppPayment && (
+                           <label 
+                              onClick={() => setPaymentMethod('whatsapp')}
+                              className={`cursor-pointer p-6 border-2 rounded-2xl flex items-center justify-between transition-all group ${paymentMethod === 'whatsapp' ? 'border-primary bg-green-50/50' : 'border-gray-100 hover:border-gray-200'}`}
+                           >
+                              <div className="flex items-center gap-5">
+                                 <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${paymentMethod === 'whatsapp' ? 'border-primary' : 'border-gray-300'}`}>
+                                    {paymentMethod === 'whatsapp' && <div className="w-3 h-3 bg-primary rounded-full"></div>}
+                                 </div>
+                                 <div>
+                                    <span className="font-bold text-lg text-gray-900 block mb-0.5">Pay via WhatsApp</span>
+                                    <span className="text-sm text-gray-500">Send order to support agent & pay via link</span>
+                                 </div>
+                              </div>
+                              <MessageCircle size={24} className="text-green-500 transition-colors" />
+                           </label>
+                        )}
                      </div>
 
                      <div className="flex justify-between mt-10">
@@ -234,8 +310,8 @@ export const Checkout: React.FC = () => {
                         <div>
                            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Payment Method</p>
                            <div className="flex items-center gap-3 text-primary font-bold bg-white p-4 rounded-xl border border-gray-100 w-fit">
-                              {paymentMethod === 'knet' ? <div className="w-3 h-3 bg-primary rounded-full"></div> : <CreditCard size={20}/>}
-                              {paymentMethod === 'knet' ? 'KNET' : 'Credit Card'}
+                              {paymentMethod === 'whatsapp' ? <MessageCircle className="text-green-500" size={20}/> : paymentMethod === 'knet' ? <div className="w-3 h-3 bg-primary rounded-full"></div> : <CreditCard size={20}/>}
+                              {paymentMethod === 'knet' ? 'KNET' : paymentMethod === 'credit' ? 'Credit Card' : 'WhatsApp'}
                            </div>
                         </div>
                      </div>
@@ -264,8 +340,15 @@ export const Checkout: React.FC = () => {
                         <button onClick={() => setStep(2)} className="px-8 py-4 border border-gray-200 text-gray-600 font-bold rounded-xl hover:bg-gray-50 transition-colors">
                            Back
                         </button>
-                        <button onClick={handlePlaceOrder} className="px-10 py-4 bg-primary text-white font-bold rounded-xl hover:bg-slate-800 transition-all shadow-lg shadow-primary/20 flex items-center gap-2 hover:-translate-y-1">
-                           Pay {finalTotal} {appSettings.currency}
+                        <button 
+                           onClick={handlePlaceOrder} 
+                           className={`px-10 py-4 text-white font-bold rounded-xl transition-all shadow-lg flex items-center gap-2 hover:-translate-y-1 ${paymentMethod === 'whatsapp' ? 'bg-[#25D366] hover:bg-[#128c7e] shadow-green-200' : 'bg-primary hover:bg-slate-800 shadow-primary/20'}`}
+                        >
+                           {paymentMethod === 'whatsapp' ? (
+                              <>Place Order on WhatsApp <MessageCircle size={20} /></>
+                           ) : (
+                              <>Pay {finalTotal} {appSettings.currency}</>
+                           )}
                         </button>
                      </div>
                   </div>
