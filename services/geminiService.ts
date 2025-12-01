@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Chat, GenerateContentResponse } from "@google/genai";
 import { Product } from "../types";
 import { PRODUCTS } from "../data/products";
@@ -65,33 +64,54 @@ export const generateProductReview = async (product: Product): Promise<string> =
   }
 };
 
+// Generates a URL for an AI generated image based on a prompt
+export const generateProductImage = (visualDescription: string): string => {
+    // Using Pollinations.ai for demo purposes - it generates images from text prompts without API key
+    const encodedPrompt = encodeURIComponent(`professional product photography of ${visualDescription}, studio lighting, 8k, highly detailed, minimalist background`);
+    return `https://image.pollinations.ai/prompt/${encodedPrompt}?nologo=true&seed=${Math.floor(Math.random() * 10000)}`;
+};
+
 // New function to auto-fetch/generate specs from model name
 export const fetchPhoneSpecs = async (modelName: string): Promise<Partial<Product> | null> => {
     try {
         const prompt = `
             Act as a technical product specification API. 
-            I need detailed technical specs for the mobile phone: "${modelName}".
+            I need EXHAUSTIVE technical specs and SEO data for the mobile phone: "${modelName}".
+            
             Return ONLY a valid JSON object. Do not include markdown formatting.
             
             The JSON structure must be:
             {
-                "brand": "String (e.g. Apple, Samsung, Xiaomi)",
+                "brand": "String",
                 "category": "Smartphones",
-                "price": Number (Estimate in Kuwaiti Dinar KWD, strictly number),
-                "description": "A 2-sentence marketing description.",
+                "price": Number (Estimate in KWD),
+                "description": "A compelling 2-sentence sales description.",
+                "visualDescription": "A precise visual description of the phone (color, material, camera layout) for an image generator.",
                 "specs": {
-                    "screen": "String (e.g. 6.8 inch Dynamic AMOLED 2X, 120Hz)",
-                    "processor": "String (e.g. Snapdragon 8 Gen 3)",
-                    "ram": "String (e.g. 12GB)",
-                    "storage": "String (e.g. 256GB/512GB/1TB)",
-                    "camera": "String (e.g. 200MP Main + 50MP Periscope)",
-                    "battery": "String (e.g. 5000mAh, 45W Charging)",
-                    "os": "String (e.g. Android 14, One UI 6.1)",
-                    "weight": "String",
-                    "dimensions": "String",
-                    "sim": "String (e.g. Dual SIM + eSIM)"
+                    "Screen": "e.g. 6.8 inch Dynamic AMOLED 2X, 120Hz, 2600 nits",
+                    "Processor": "e.g. Snapdragon 8 Gen 3 for Galaxy",
+                    "RAM": "e.g. 12GB LPDDR5X",
+                    "Storage": "e.g. 256GB/512GB/1TB UFS 4.0",
+                    "Main Camera": "e.g. 200MP Wide + 50MP Periscope + 10MP Tele + 12MP Ultra",
+                    "Selfie Camera": "e.g. 12MP Dual Pixel AF",
+                    "Battery": "e.g. 5000mAh",
+                    "Charging": "e.g. 45W Wired, 15W Wireless",
+                    "OS": "e.g. Android 14, One UI 6.1",
+                    "Build": "e.g. Titanium Frame, Gorilla Glass Armor",
+                    "Dimensions": "e.g. 162.3 x 79.0 x 8.6 mm",
+                    "Weight": "e.g. 232g",
+                    "SIM": "e.g. Dual SIM + eSIM",
+                    "Connectivity": "e.g. 5G, Wi-Fi 7, Bluetooth 5.3, NFC, UWB",
+                    "Sensors": "e.g. Ultrasonic Fingerprint, Face ID, Accelerometer, Gyro",
+                    "Audio": "e.g. Stereo Speakers, 32-bit/384kHz audio",
+                    "Durability": "e.g. IP68 Dust/Water Resistant"
                 },
-                "tags": ["Array", "of", "strings"]
+                "seo": {
+                    "metaTitle": "SEO Title (60 chars max)",
+                    "metaDescription": "SEO Description (160 chars max)",
+                    "keywords": ["Array", "of", "20", "high", "volume", "keywords"]
+                },
+                "tags": ["Array", "of", "10", "relevant", "tags"]
             }
         `;
 
@@ -105,7 +125,17 @@ export const fetchPhoneSpecs = async (modelName: string): Promise<Partial<Produc
         text = text.replace(/```json/g, '').replace(/```/g, '').trim();
         
         const data = JSON.parse(text);
-        return data;
+        
+        // Auto-generate an image URL if visual description exists
+        let imageUrl;
+        if (data.visualDescription) {
+            imageUrl = generateProductImage(modelName + " " + data.visualDescription);
+        }
+
+        return {
+            ...data,
+            images: imageUrl ? [imageUrl] : []
+        };
     } catch (error) {
         console.error("Error generating specs:", error);
         return null;

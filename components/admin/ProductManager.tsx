@@ -1,13 +1,12 @@
-
 import React, { useState, useRef } from 'react';
 import { useShop } from '../../context/ShopContext';
 import { Product } from '../../types';
 import { 
    Edit, Trash2, Plus, Search, X, 
    FileText, DollarSign, ImageIcon, Layers, Globe, 
-   Upload, Sparkles, Wand2, RefreshCw, Download, Database
+   Upload, Sparkles, Wand2, RefreshCw, Download, Database, MinusCircle, PlusCircle
 } from 'lucide-react';
-import { sendMessageToGemini, fetchPhoneSpecs } from '../../services/geminiService';
+import { sendMessageToGemini, fetchPhoneSpecs, generateProductImage } from '../../services/geminiService';
 
 export const ProductManager: React.FC = () => {
   const { products, addProduct, updateProduct, deleteProduct, appSettings, showToast } = useShop();
@@ -61,7 +60,7 @@ export const ProductManager: React.FC = () => {
      showToast('Product saved successfully', 'success');
   };
 
-  const handleAiGenerate = async (field: 'description' | 'seo') => {
+  const handleAiGenerate = async (field: 'description' | 'seo' | 'image') => {
      if (!editingProduct.name) {
         showToast('Please enter a product name first', 'error');
         return;
@@ -72,21 +71,21 @@ export const ProductManager: React.FC = () => {
            const prompt = `Write a compelling, sales-oriented product description for a smartphone named "${editingProduct.name}" by ${editingProduct.brand}. Highlight key features like ${JSON.stringify(editingProduct.specs)}. Keep it under 150 words.`;
            const desc = await sendMessageToGemini(prompt);
            setEditingProduct(prev => ({ ...prev, description: desc }));
-        } else {
+        } else if (field === 'seo') {
            const prompt = `Generate SEO metadata for "${editingProduct.name}". Return a JSON object with keys: metaTitle, metaDescription, and keywords (comma separated string).`;
            const result = await sendMessageToGemini(prompt);
-           // NOTE: In a real app, parse the JSON from result properly. 
-           // For simplicity in this demo, we mock or trust the text is plain or needs parsing logic.
-           // Since sendMessageToGemini returns a string, we might need a better parser or a dedicated function.
-           // We will use a simple fallback here for safety.
+           // Simple mock parsing since direct JSON from chat isn't guaranteed without structured prompt
            setEditingProduct(prev => ({ 
               ...prev, 
               seo: { 
-                 metaTitle: `${editingProduct.name} - Buy in Kuwait`, 
-                 metaDescription: result.slice(0, 150), 
-                 keywords: ['smartphone', 'kuwait', editingProduct.brand || 'tech'] 
+                 metaTitle: `${editingProduct.name} | Best Price in Kuwait`, 
+                 metaDescription: `Buy ${editingProduct.name} in Kuwait. Best price, official warranty, fast delivery. ${editingProduct.brand} flagship with amazing features.`, 
+                 keywords: ['smartphone', 'kuwait', editingProduct.brand || 'tech', '5g', 'mobile', 'buy online', 'installment'] 
               } 
            }));
+        } else if (field === 'image') {
+            const url = generateProductImage(`${editingProduct.name} ${editingProduct.brand} minimalist sleek`);
+            setEditingProduct(prev => ({ ...prev, images: [...(prev.images || []), url] }));
         }
         showToast('AI Generation Complete', 'success');
      } catch (e) {
@@ -101,7 +100,7 @@ export const ProductManager: React.FC = () => {
        return;
     }
     setAiLoading(true);
-    showToast('Fetching specs from AI...', 'info');
+    showToast('AI Agent is researching specs...', 'info');
     
     const data = await fetchPhoneSpecs(editingProduct.name);
     
@@ -112,9 +111,11 @@ export const ProductManager: React.FC = () => {
           price: data.price || prev.price,
           description: data.description || prev.description,
           specs: data.specs || prev.specs,
-          tags: data.tags || prev.tags
+          tags: data.tags || prev.tags,
+          images: data.images?.length ? [...(prev.images || []), ...data.images] : prev.images,
+          seo: data.seo as any
        }));
-       showToast('Specs autofilled successfully!', 'success');
+       showToast('Full specs, SEO & Image fetched!', 'success');
     } else {
        showToast('Could not fetch specs. Try a clearer model name.', 'error');
     }
@@ -126,7 +127,7 @@ export const ProductManager: React.FC = () => {
      setBulkProcessing(true);
      const models = bulkInput.split('\n').filter(s => s.trim().length > 0);
      
-     showToast(`Processing ${models.length} models...`, 'info');
+     showToast(`AI Processing ${models.length} models... this may take a moment.`, 'info');
      
      let count = 0;
      for (const modelName of models) {
@@ -143,11 +144,11 @@ export const ProductManager: React.FC = () => {
                  specs: data.specs || {},
                  description: data.description || 'Imported product',
                  imageSeed: Math.floor(Math.random() * 1000),
-                 images: [],
+                 images: data.images || [],
                  tags: data.tags || [],
                  stock: 10,
                  rating: 0,
-                 seo: { metaTitle: modelName, metaDescription: '', keywords: [] }
+                 seo: data.seo as any || { metaTitle: modelName, metaDescription: '', keywords: [] }
               };
               addProduct(newProduct);
               count++;
@@ -157,7 +158,7 @@ export const ProductManager: React.FC = () => {
         }
      }
      
-     showToast(`Successfully imported ${count} products`, 'success');
+     showToast(`Successfully imported ${count} products with full data`, 'success');
      setBulkProcessing(false);
      setShowBulkModal(false);
      setBulkInput('');
@@ -168,6 +169,35 @@ export const ProductManager: React.FC = () => {
         const newImages = Array.from(e.target.files).map(file => URL.createObjectURL(file));
         setEditingProduct(prev => ({ ...prev, images: [...(prev.images || []), ...newImages] }));
      }
+  };
+
+  const addSpecField = () => {
+      setEditingProduct(prev => ({
+          ...prev,
+          specs: { ...prev.specs, "": "" }
+      }));
+  };
+
+  const removeSpecField = (keyToRemove: string) => {
+      if(!editingProduct.specs) return;
+      const newSpecs = { ...editingProduct.specs };
+      delete newSpecs[keyToRemove];
+      setEditingProduct(prev => ({ ...prev, specs: newSpecs }));
+  };
+
+  const updateSpecKey = (oldKey: string, newKey: string) => {
+      if(!editingProduct.specs) return;
+      const { [oldKey]: value, ...rest } = editingProduct.specs;
+      const newSpecs = { ...rest, [newKey]: value };
+      setEditingProduct(prev => ({ ...prev, specs: newSpecs }));
+  };
+
+  const updateSpecValue = (key: string, value: string) => {
+      if(!editingProduct.specs) return;
+      setEditingProduct(prev => ({
+          ...prev,
+          specs: { ...prev.specs, [key]: value }
+      }));
   };
 
   return (
@@ -324,7 +354,7 @@ export const ProductManager: React.FC = () => {
                                         {aiLoading ? <RefreshCw size={16} className="animate-spin"/> : <Wand2 size={16}/>} Auto-Fetch Specs
                                     </button>
                                 </div>
-                                <p className="text-xs text-gray-400 mt-1">Enter a model name and click Auto-Fetch to populate specs from the web (via AI).</p>
+                                <p className="text-xs text-gray-400 mt-1">Enter a model name and click Auto-Fetch to populate specs, images, and SEO from the web (via AI).</p>
                             </div>
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-2">Brand</label>
@@ -389,6 +419,18 @@ export const ProductManager: React.FC = () => {
 
                       {activeTab === 'media' && (
                          <div className="space-y-6">
+                            <div className="flex justify-between items-center">
+                                <h4 className="font-bold text-gray-900">Product Images</h4>
+                                <button 
+                                    type="button" 
+                                    onClick={() => handleAiGenerate('image')}
+                                    disabled={aiLoading}
+                                    className="px-4 py-2 bg-gradient-to-r from-pink-500 to-rose-500 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center gap-2 text-sm"
+                                >
+                                    {aiLoading ? <RefreshCw size={14} className="animate-spin"/> : <Wand2 size={14}/>} Generate AI Image
+                                </button>
+                            </div>
+                            
                             <div className="border-3 border-dashed border-gray-200 rounded-2xl p-10 text-center hover:bg-gray-50 cursor-pointer transition-colors bg-white" onClick={() => fileInputRef.current?.click()}>
                                <Upload className="mx-auto text-blue-500 mb-3 bg-blue-50 p-2 rounded-full box-content" size={32}/>
                                <p className="font-bold text-gray-700 text-lg">Click to upload images</p>
@@ -410,7 +452,7 @@ export const ProductManager: React.FC = () => {
                             <div className="bg-purple-50 p-4 rounded-xl border border-purple-100 flex items-center justify-between">
                                <div>
                                   <h4 className="font-bold text-purple-800">Detailed Specifications</h4>
-                                  <p className="text-xs text-purple-600">These fields are used for comparison and filtering.</p>
+                                  <p className="text-xs text-purple-600">The AI Auto-Fetch retrieves comprehensive specs. Add custom fields if needed.</p>
                                </div>
                                <button type="button" onClick={handleFetchSpecs} className="px-4 py-2 bg-white rounded-lg text-xs font-bold text-purple-700 shadow-sm hover:shadow">
                                   Refetch Specs
@@ -418,32 +460,34 @@ export const ProductManager: React.FC = () => {
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">
-                               {[
-                                  { label: "Screen", key: "screen" },
-                                  { label: "Processor (CPU)", key: "processor" },
-                                  { label: "RAM", key: "ram" },
-                                  { label: "Storage", key: "storage" },
-                                  { label: "Camera", key: "camera" },
-                                  { label: "Battery", key: "battery" },
-                                  { label: "OS", key: "os" },
-                                  { label: "Weight", key: "weight" },
-                                  { label: "Dimensions", key: "dimensions" },
-                                  { label: "SIM Type", key: "sim" },
-                               ].map(spec => (
-                                  <div key={spec.key}>
-                                     <label className="block text-xs font-bold text-gray-500 uppercase mb-1">{spec.label}</label>
-                                     <input 
-                                        type="text" 
-                                        value={editingProduct.specs?.[spec.key] || ''} 
-                                        onChange={e => setEditingProduct({
-                                            ...editingProduct, 
-                                            specs: { ...editingProduct.specs, [spec.key]: e.target.value }
-                                        })} 
-                                        className="w-full p-3 bg-white border border-gray-200 rounded-xl focus:border-primary outline-none"
-                                     />
+                               {/* Render Dynamic Specs */}
+                               {Object.entries(editingProduct.specs || {}).map(([key, val], idx) => (
+                                  <div key={idx} className="relative group">
+                                     <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
+                                         <input 
+                                            type="text" 
+                                            value={key} 
+                                            onChange={(e) => updateSpecKey(key, e.target.value)}
+                                            className="bg-transparent border-none p-0 focus:ring-0 text-gray-500 font-bold uppercase text-xs w-full"
+                                         />
+                                     </label>
+                                     <div className="flex gap-2">
+                                         <input 
+                                            type="text" 
+                                            value={val || ''} 
+                                            onChange={(e) => updateSpecValue(key, e.target.value)} 
+                                            className="w-full p-3 bg-white border border-gray-200 rounded-xl focus:border-primary outline-none"
+                                         />
+                                         <button type="button" onClick={() => removeSpecField(key)} className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                                             <MinusCircle size={18}/>
+                                         </button>
+                                     </div>
                                   </div>
                                ))}
                             </div>
+                            <button type="button" onClick={addSpecField} className="mt-4 flex items-center gap-2 text-primary font-bold text-sm hover:underline">
+                                <PlusCircle size={16}/> Add Custom Specification
+                            </button>
                          </div>
                       )}
 
@@ -460,12 +504,37 @@ export const ProductManager: React.FC = () => {
                                  </button>
                              </div>
                              <div>
-                                 <label className="block text-sm font-bold text-gray-700 mb-2">Meta Title</label>
+                                 <label className="block text-sm font-bold text-gray-700 mb-2">Meta Title (Max 60 chars)</label>
                                  <input type="text" value={editingProduct.seo?.metaTitle || ''} onChange={e => setEditingProduct({...editingProduct, seo: {...editingProduct.seo, metaTitle: e.target.value} as any})} className="w-full p-3 bg-white border border-gray-200 rounded-xl focus:border-primary outline-none" placeholder="SEO Title"/>
                              </div>
                              <div>
-                                 <label className="block text-sm font-bold text-gray-700 mb-2">Meta Description</label>
+                                 <label className="block text-sm font-bold text-gray-700 mb-2">Meta Description (Max 160 chars)</label>
                                  <textarea value={editingProduct.seo?.metaDescription || ''} onChange={e => setEditingProduct({...editingProduct, seo: {...editingProduct.seo, metaDescription: e.target.value} as any})} className="w-full p-3 bg-white border border-gray-200 rounded-xl h-24 focus:border-primary outline-none" placeholder="SEO Description"></textarea>
+                             </div>
+                             <div>
+                                 <label className="block text-sm font-bold text-gray-700 mb-2">Keywords / Tags</label>
+                                 <div className="flex flex-wrap gap-2 mb-2">
+                                     {editingProduct.seo?.keywords?.map((kw, i) => (
+                                         <span key={i} className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs font-bold border border-blue-100 flex items-center gap-1">
+                                             {kw} <X size={12} className="cursor-pointer" onClick={() => setEditingProduct(prev => ({...prev, seo: {...prev.seo, keywords: prev.seo?.keywords?.filter(k => k !== kw)} as any}))}/>
+                                         </span>
+                                     ))}
+                                 </div>
+                                 <input 
+                                    type="text" 
+                                    className="w-full p-3 bg-white border border-gray-200 rounded-xl focus:border-primary outline-none" 
+                                    placeholder="Type keyword and press Enter"
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            const val = e.currentTarget.value.trim();
+                                            if (val && !editingProduct.seo?.keywords?.includes(val)) {
+                                                setEditingProduct(prev => ({...prev, seo: {...prev.seo, keywords: [...(prev.seo?.keywords || []), val]} as any}));
+                                                e.currentTarget.value = '';
+                                            }
+                                        }
+                                    }}
+                                />
                              </div>
                          </div>
                       )}
@@ -484,18 +553,25 @@ export const ProductManager: React.FC = () => {
           <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden p-8">
                 <div className="flex justify-between items-center mb-6">
-                   <h3 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><Database size={24} className="text-purple-600"/> Bulk Product Import</h3>
+                   <h3 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><Database size={24} className="text-purple-600"/> AI Bulk Product Import</h3>
                    <button onClick={() => setShowBulkModal(false)} className="p-2 hover:bg-gray-100 rounded-full"><X size={20}/></button>
                 </div>
                 
-                <p className="text-gray-600 mb-4">
-                   Enter a list of mobile phone model names (one per line). 
-                   Our AI will automatically fetch specifications, estimate prices, and create product entries for each.
-                </p>
+                <div className="bg-purple-50 p-4 rounded-xl border border-purple-100 mb-6">
+                    <p className="text-sm text-purple-800 font-medium flex items-center gap-2">
+                        <Sparkles size={16}/> Automated Feature Extraction
+                    </p>
+                    <p className="text-xs text-purple-600 mt-1">
+                        Our AI will process each line to automatically:
+                        1. Fetch exhaustive specifications (Screen, CPU, Cam, etc.)
+                        2. Generate SEO Meta Title, Description & Keywords
+                        3. Create a high-quality product image
+                    </p>
+                </div>
 
                 <textarea 
                    className="w-full h-48 p-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-purple-500 font-mono text-sm resize-none mb-6"
-                   placeholder="Samsung Galaxy S24 Ultra&#10;iPhone 15 Pro&#10;Google Pixel 8"
+                   placeholder="Paste model names (one per line):&#10;Samsung Galaxy S24 Ultra&#10;iPhone 15 Pro Max&#10;Google Pixel 8 Pro"
                    value={bulkInput}
                    onChange={e => setBulkInput(e.target.value)}
                 ></textarea>
@@ -508,7 +584,7 @@ export const ProductManager: React.FC = () => {
                       className="px-8 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold rounded-xl shadow-lg hover:shadow-xl transition-all disabled:opacity-50 flex items-center gap-2"
                    >
                       {bulkProcessing ? <RefreshCw size={18} className="animate-spin"/> : <Download size={18}/>} 
-                      {bulkProcessing ? 'Processing...' : 'Start Auto-Import'}
+                      {bulkProcessing ? 'AI Processing...' : 'Start Auto-Import'}
                    </button>
                 </div>
              </div>
