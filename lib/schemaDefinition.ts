@@ -13,6 +13,7 @@ create table if not exists public.products (
   price numeric not null,
   "originalPrice" numeric,
   "costPrice" numeric,
+  "monthlyPrice" numeric,
   category text,
   stock integer default 0,
   image text,
@@ -34,11 +35,56 @@ create table if not exists public.products (
   sku text,
   rating numeric default 0,
   "reviewsCount" integer default 0,
+  reviews jsonb default '[]'::jsonb,
   "imageSeed" integer,
   express boolean default false,
   seo jsonb default '{}'::jsonb,
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
+
+-- Self-healing: Add columns if they are missing (for existing databases)
+do $$
+begin
+  if not exists (select 1 from information_schema.columns where table_name='products' and column_name='monthlyPrice') then
+    alter table public.products add column "monthlyPrice" numeric;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name='products' and column_name='reviews') then
+    alter table public.products add column reviews jsonb default '[]'::jsonb;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name='products' and column_name='imageSeed') then
+    alter table public.products add column "imageSeed" integer;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name='products' and column_name='isHero') then
+    alter table public.products add column "isHero" boolean default false;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name='products' and column_name='heroTitle') then
+    alter table public.products add column "heroTitle" text;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name='products' and column_name='heroSubtitle') then
+    alter table public.products add column "heroSubtitle" text;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name='products' and column_name='heroImage') then
+    alter table public.products add column "heroImage" text;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name='products' and column_name='isFeatured') then
+    alter table public.products add column "isFeatured" boolean default false;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name='products' and column_name='isTicker') then
+    alter table public.products add column "isTicker" boolean default false;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name='products' and column_name='originalPrice') then
+    alter table public.products add column "originalPrice" numeric;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name='products' and column_name='costPrice') then
+    alter table public.products add column "costPrice" numeric;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name='products' and column_name='storageOptions') then
+    alter table public.products add column "storageOptions" text[];
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name='products' and column_name='reviewsCount') then
+    alter table public.products add column "reviewsCount" integer default 0;
+  end if;
+end $$;
 
 -- 2. ORDERS
 create table if not exists public.orders (
@@ -110,6 +156,17 @@ create table if not exists public.app_settings (
   "socialLinks" jsonb,
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
+
+-- Self-healing for settings
+do $$
+begin
+  if not exists (select 1 from information_schema.columns where table_name='app_settings' and column_name='enableWhatsAppPayment') then
+    alter table public.app_settings add column "enableWhatsAppPayment" boolean default true;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name='app_settings' and column_name='socialLinks') then
+    alter table public.app_settings add column "socialLinks" jsonb;
+  end if;
+end $$;
 
 -- 7. RETURNS
 create table if not exists public.returns (

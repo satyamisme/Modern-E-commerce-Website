@@ -10,9 +10,10 @@ import {
 import { useShop } from '../context/ShopContext';
 import { Link, useNavigate } from 'react-router-dom';
 import { ProductCard } from '../components/ProductCard';
+import { SkeletonCard } from '../components/SkeletonLoader';
 
 export const Home: React.FC = () => {
-  const { products, recentlyViewed } = useShop();
+  const { products, recentlyViewed, isLoading } = useShop();
   const navigate = useNavigate();
 
   // Dynamic Product Collections
@@ -103,7 +104,10 @@ export const Home: React.FC = () => {
             </div>
             {/* DENSE GRID: 5 columns on MD, 6 on LG */}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4">
-                {newArrivals.map(p => <ProductCard key={p.id} product={p}/>)}
+                {isLoading 
+                   ? [...Array(12)].map((_, i) => <SkeletonCard key={i} />)
+                   : newArrivals.map(p => <ProductCard key={p.id} product={p}/>)
+                }
             </div>
         </section>
 
@@ -154,7 +158,10 @@ export const Home: React.FC = () => {
                  <h2 className="text-xl font-black text-gray-900 uppercase tracking-tight">Under 100 KWD</h2>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4">
-                {budgetProducts.map(p => <ProductCard key={p.id} product={p}/>)}
+                {isLoading
+                   ? [...Array(6)].map((_, i) => <SkeletonCard key={i} />)
+                   : budgetProducts.map(p => <ProductCard key={p.id} product={p}/>)
+                }
             </div>
         </section>
 
@@ -166,9 +173,9 @@ export const Home: React.FC = () => {
                  <div className="h-px bg-gray-200 w-12"></div>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4">
-                 {featuredProducts.length > 0 
-                    ? featuredProducts.map(p => <ProductCard key={p.id} product={p} />) 
-                    : products.slice(0, 12).map(p => <ProductCard key={p.id} product={p} />)
+                 {isLoading 
+                    ? [...Array(6)].map((_, i) => <SkeletonCard key={i} />)
+                    : (featuredProducts.length > 0 ? featuredProducts : products.slice(0, 12)).map(p => <ProductCard key={p.id} product={p} />)
                  }
             </div>
             <div className="mt-8 text-center">

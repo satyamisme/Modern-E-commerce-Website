@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { useShop } from '../../context/ShopContext';
 import { Product, ProductVariant } from '../../types';
@@ -108,9 +109,9 @@ export const ProductManager: React.FC = () => {
      e.preventDefault();
      
      // Calculate total stock from variants if they exist
-     const totalStock = editingProduct.variants?.length 
-        ? editingProduct.variants.reduce((acc, v) => acc + v.stock, 0)
-        : Number(editingProduct.stock);
+     const totalStock = (editingProduct.variants && editingProduct.variants.length > 0)
+        ? editingProduct.variants.reduce((acc, v) => acc + (v.stock || 0), 0)
+        : Number(editingProduct.stock || 0);
 
      const productData: Product = {
         id: editingProduct.id || `prod-${Date.now()}`,
@@ -313,7 +314,7 @@ export const ProductManager: React.FC = () => {
 
       setEditingProduct(prev => ({
           ...prev,
-          variants: prev.variants?.map(v => {
+          variants: (prev.variants || []).map(v => {
              const matchColor = bulkColorScope === 'all' || v.color === bulkColorScope;
              const matchStorage = bulkStorageScope === 'all' || v.storage === bulkStorageScope;
              
@@ -828,7 +829,7 @@ export const ProductManager: React.FC = () => {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-100">
-                                            {editingProduct.variants?.filter(v => 
+                                            {(editingProduct.variants || []).filter(v => 
                                                 (matrixFilterColor === 'all' || v.color === matrixFilterColor) && 
                                                 (matrixFilterStorage === 'all' || v.storage === matrixFilterStorage)
                                             ).map((variant) => (

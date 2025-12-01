@@ -1,5 +1,4 @@
 
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Product, CartItem, ToastMessage, User, Order, Address, Review, AppSettings, CustomerProfile, Warehouse, RoleDefinition, Permission, RoleType, ReturnRequest, Notification } from '../types';
 import { PRODUCTS as INITIAL_PRODUCTS } from '../data/products';
@@ -92,6 +91,7 @@ interface ShopContextType {
   notifications: Notification[];
   isOffline: boolean;
   offlineReason: 'NETWORK' | 'AUTH' | 'SCHEMA' | null;
+  isLoading: boolean;
   
   // Actions
   setSearchQuery: (query: string) => void;
@@ -164,6 +164,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // State Initialization - Prioritize Local Storage for Offline persistence
   const [isOffline, setIsOffline] = useState(APP_CONFIG.useMockData);
   const [offlineReason, setOfflineReason] = useState<'NETWORK' | 'AUTH' | 'SCHEMA' | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Core Data
   const [products, setProducts] = useState<Product[]>(() => getStoredData('lumina_products', APP_CONFIG.useMockData ? INITIAL_PRODUCTS : []));
@@ -208,10 +209,12 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const checkOnlineStatus = async () => {
+      setIsLoading(true);
       // 1. Explicit Mock Mode
       if (APP_CONFIG.useMockData) {
         setIsOffline(true);
         setOfflineReason(null);
+        setIsLoading(false);
         return;
       }
 
@@ -222,42 +225,65 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsOffline(false);
         setOfflineReason(null);
         
-        // Fetch Real Data from Supabase
-        const { data: prodData } = await supabase.from('products').select('*');
-        if (prodData) setProducts(prodData);
+        try {
+            // Fetch Real Data from Supabase
+            const { data: prodData } = await supabase.from('products').select('*');
+            if (prodData) {
+               setProducts(prodData);
+               localStorage.setItem('lumina_products', JSON.stringify(prodData));
+            }
 
-        const { data: orderData } = await supabase.from('orders').select('*');
-        if (orderData) setOrders(orderData);
+            const { data: orderData } = await supabase.from('orders').select('*');
+            if (orderData) {
+               setOrders(orderData);
+               localStorage.setItem('lumina_orders', JSON.stringify(orderData));
+            }
 
-        const { data: custData } = await supabase.from('customers').select('*');
-        if (custData) setCustomers(custData);
+            const { data: custData } = await supabase.from('customers').select('*');
+            if (custData) {
+               setCustomers(custData);
+               localStorage.setItem('lumina_customers', JSON.stringify(custData));
+            }
 
-        const { data: whData } = await supabase.from('warehouses').select('*');
-        if (whData) setWarehouses(whData);
+            const { data: whData } = await supabase.from('warehouses').select('*');
+            if (whData) {
+               setWarehouses(whData);
+               localStorage.setItem('lumina_warehouses', JSON.stringify(whData));
+            }
 
-        // Fetch Roles - Auto Seed if Empty
-        const { data: roleData } = await supabase.from('roles').select('*');
-        if (roleData && roleData.length > 0) {
-            setRoles(roleData);
-        } else {
-            console.log("Empty roles table detected.");
-            // Keep local initial roles to avoid lockout, but allow seed
+            // Fetch Roles - Auto Seed if Empty
+            const { data: roleData } = await supabase.from('roles').select('*');
+            if (roleData && roleData.length > 0) {
+                setRoles(roleData);
+                localStorage.setItem('lumina_roles', JSON.stringify(roleData));
+            } else {
+                console.log("Empty roles table detected.");
+                // Keep local initial roles to avoid lockout, but allow seed
+            }
+
+            const { data: returnData } = await supabase.from('returns').select('*');
+            if (returnData) {
+               setReturns(returnData);
+               localStorage.setItem('lumina_returns', JSON.stringify(returnData));
+            }
+
+            const { data: settingData } = await supabase.from('app_settings').select('*').maybeSingle();
+            if (settingData) {
+               setAppSettings(prev => ({...prev, ...settingData}));
+               localStorage.setItem('lumina_settings', JSON.stringify({...appSettings, ...settingData}));
+            }
+
+            console.log("Sync Complete.");
+        } catch (err) {
+            console.error("Data Sync Error:", err);
+            showToast("Connected, but failed to sync some data.", "error");
         }
-
-        const { data: returnData } = await supabase.from('returns').select('*');
-        if (returnData) setReturns(returnData);
-
-        const { data: settingData } = await supabase.from('app_settings').select('*').single();
-        if (settingData) setAppSettings(prev => ({...prev, ...settingData}));
-
-        showToast("Connected to Online Database", "success");
 
       } else {
         // 3. Fallback to Offline with specific error
         console.warn(`Connection failed: ${status.message} (${status.code})`);
         setIsOffline(true);
         
-        // Show informative toast about WHY we are offline
         if (status.code === 'NO_SCHEMA') {
             setOfflineReason('SCHEMA');
             showToast("Database connected but tables missing. Setup required.", "info");
@@ -269,7 +295,83 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
             showToast("Offline Mode: Using local database", "info");
         }
       }
+      setIsLoading(false);
   };
+
+  // --- Realtime Subscriptions ---
+  useEffect(() => {
+    if (isOffline) return;
+
+    // Subscribe to multiple channels for live updates
+    const channel = supabase.channel('realtime_global')
+      
+      // 1. ORDERS
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
+         if (payload.eventType === 'INSERT') {
+            const newOrder = payload.new as Order;
+            setOrders(prev => [newOrder, ...prev]);
+            showToast(`New Order Received: ${newOrder.id}`, 'info');
+            // Notification logic
+            setNotifications(prev => [{
+               id: `notif-${Date.now()}`,
+               title: 'New Order',
+               message: `Order ${newOrder.id} placed by ${newOrder.customer.name}`,
+               type: 'success',
+               timestamp: Date.now(),
+               read: false
+            }, ...prev]);
+         }
+         else if (payload.eventType === 'UPDATE') {
+            const updated = payload.new as Order;
+            setOrders(prev => prev.map(o => o.id === updated.id ? updated : o));
+         }
+         else if (payload.eventType === 'DELETE') {
+            setOrders(prev => prev.filter(o => o.id !== payload.old.id));
+         }
+      })
+
+      // 2. PRODUCTS (Inventory)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, (payload) => {
+         if (payload.eventType === 'INSERT') {
+            setProducts(prev => [payload.new as Product, ...prev]);
+         }
+         else if (payload.eventType === 'UPDATE') {
+            const updated = payload.new as Product;
+            setProducts(prev => prev.map(p => p.id === updated.id ? updated : p));
+         }
+         else if (payload.eventType === 'DELETE') {
+            setProducts(prev => prev.filter(p => p.id !== payload.old.id));
+         }
+      })
+
+      // 3. RETURNS
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'returns' }, (payload) => {
+         if (payload.eventType === 'INSERT') {
+            const newReturn = payload.new as ReturnRequest;
+            setReturns(prev => [newReturn, ...prev]);
+            setNotifications(prev => [{
+               id: `notif-${Date.now()}`,
+               title: 'Return Request',
+               message: `New return request for Order ${newReturn.orderId}`,
+               type: 'warning',
+               timestamp: Date.now(),
+               read: false
+            }, ...prev]);
+         }
+         else if (payload.eventType === 'UPDATE') {
+            const updated = payload.new as ReturnRequest;
+            setReturns(prev => prev.map(r => r.id === updated.id ? updated : r));
+         }
+      })
+
+      .subscribe((status) => {
+         if (status === 'SUBSCRIBED') console.log("Realtime Subscriptions Active");
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isOffline]);
 
   // --- Initialization ---
   useEffect(() => {
@@ -277,13 +379,11 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   // --- Persistence & Sync ---
-  // User data always persists locally
   useEffect(() => { localStorage.setItem('lumina_cart', JSON.stringify(cart)); }, [cart]);
   useEffect(() => { localStorage.setItem('lumina_wishlist', JSON.stringify(wishlist)); }, [wishlist]);
   useEffect(() => { localStorage.setItem('lumina_compare', JSON.stringify(compareList)); }, [compareList]);
   useEffect(() => { localStorage.setItem('lumina_recent', JSON.stringify(recentlyViewed)); }, [recentlyViewed]);
   
-  // Admin Data Persistence (Sync to LocalStorage always as backup/offline)
   useEffect(() => { localStorage.setItem('lumina_products', JSON.stringify(products)); }, [products]);
   useEffect(() => { localStorage.setItem('lumina_orders', JSON.stringify(orders)); }, [orders]);
   useEffect(() => { localStorage.setItem('lumina_roles', JSON.stringify(roles)); }, [roles]);
@@ -297,25 +397,48 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     else localStorage.removeItem('lumina_user');
   }, [user]);
 
-  // --- Actions with Backend Integration ---
+  // --- Actions ---
+
+  const sanitizeProduct = (p: Product) => {
+      const clean: any = { ...p };
+      delete clean.selectedColor;
+      delete clean.selectedStorage;
+      delete clean.quantity;
+      clean.originalPrice = clean.originalPrice || null;
+      clean.costPrice = clean.costPrice || null;
+      clean.monthlyPrice = clean.monthlyPrice || null;
+      clean.imageSeed = clean.imageSeed || null;
+      clean.reviews = clean.reviews || [];
+      clean.variants = clean.variants || [];
+      clean.specs = clean.specs || {};
+      clean.seo = clean.seo || {};
+      return clean;
+  };
 
   const addProduct = async (product: Product) => {
+     // Optimistic update
      setProducts(prev => [product, ...prev]);
      if (!isOffline) {
-        const { error } = await supabase.from('products').insert([product]);
+        const cleanProduct = sanitizeProduct(product);
+        const { error } = await supabase.from('products').insert([cleanProduct]);
         if (error) {
-           console.error('Supabase Error:', error.message || JSON.stringify(error));
-           showToast(`Failed to save to cloud: ${error.message || 'Unknown error'}`, 'error');
+           console.error('Supabase Insert Error:', JSON.stringify(error, null, 2));
+           showToast(`Cloud save failed: ${error.message || 'Check console'}`, 'error');
         }
      }
      showToast('Product added successfully', 'success');
   };
 
   const updateProduct = async (product: Product) => {
+     // Optimistic
      setProducts(prev => prev.map(p => p.id === product.id ? product : p));
      if (!isOffline) {
-        const { error } = await supabase.from('products').update(product).eq('id', product.id);
-        if (error) console.error('Update Error:', error.message || JSON.stringify(error));
+        const cleanProduct = sanitizeProduct(product);
+        const { error } = await supabase.from('products').update(cleanProduct).eq('id', product.id);
+        if (error) {
+            console.error('Supabase Update Error:', JSON.stringify(error, null, 2));
+            showToast(`Update failed: ${error.message}`, 'error');
+        }
      }
      showToast('Product updated', 'success');
   };
@@ -323,7 +446,8 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const deleteProduct = async (productId: string) => {
      setProducts(prev => prev.filter(p => p.id !== productId));
      if (!isOffline) {
-        await supabase.from('products').delete().eq('id', productId);
+        const { error } = await supabase.from('products').delete().eq('id', productId);
+        if (error) console.error('Delete Error:', error);
      }
      showToast('Product deleted', 'info');
   };
@@ -338,6 +462,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       fraudScore: 5
     };
     
+    // Optimistic UI update for current user
     setOrders(prev => [newOrder, ...prev]);
     
     // Reduce Stock
@@ -354,7 +479,9 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }));
 
     if (!isOffline) {
-       supabase.from('orders').insert([newOrder]);
+       supabase.from('orders').insert([newOrder]).then(({ error }) => {
+           if (error) console.error("Order Insert Error:", JSON.stringify(error, null, 2));
+       });
     }
 
     return newOrder;
@@ -454,14 +581,8 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const checkPermission = (permissionKey: string): boolean => {
     if (!user) return false;
-    
-    // FAILSAFE 1: Super Admin always has access
     if (user.role === 'Super Admin') return true;
-
-    // FAILSAFE 2: If roles are not loaded yet, allow admin emails
-    if (roles.length === 0 && (user.email.includes('admin') || user.email.includes('super'))) {
-        return true; 
-    }
+    if (roles.length === 0 && (user.email.includes('admin') || user.email.includes('super'))) return true; 
 
     const roleDef = roles.find(r => r.name === user.role);
     if (!roleDef) {
@@ -498,7 +619,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
      }
   };
 
-  // Admin Actions (Optimistic + DB)
+  // Admin Actions
   const updateOrderStatus = async (orderId: string, status: Order['status']) => {
      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
      if (!isOffline) await supabase.from('orders').update({ status }).eq('id', orderId);
@@ -513,7 +634,10 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateSettings = async (settings: AppSettings) => {
      setAppSettings(settings);
-     if (!isOffline) await supabase.from('app_settings').upsert(settings);
+     if (!isOffline) {
+         const { error } = await supabase.from('app_settings').upsert(settings);
+         if (error) console.error("Settings Update Error:", error);
+     }
      showToast('Settings saved', 'success');
   };
 
@@ -574,13 +698,23 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const transferStock = async (fromId: string, toId: string, productId: string, quantity: number) => {
-      // Logic to simulate transfer. In a full system, this would use a transfer log table.
-      // Here we update utilization to simulate space usage changes.
       setWarehouses(prev => prev.map(w => {
           if (w.id === fromId) return { ...w, utilization: Math.max(0, w.utilization - 1) };
           if (w.id === toId) return { ...w, utilization: Math.min(100, w.utilization + 1) };
           return w;
       }));
+      
+      const prod = products.find(p => p.id === productId);
+      const notif: Notification = {
+          id: `notif-${Date.now()}`,
+          title: 'Stock Transfer',
+          message: `Moved ${quantity}x ${prod?.name || 'Item'} from ${warehouses.find(w => w.id === fromId)?.name} to ${warehouses.find(w => w.id === toId)?.name}`,
+          type: 'info',
+          timestamp: Date.now(),
+          read: false
+      };
+      setNotifications(prev => [notif, ...prev]);
+      
       showToast('Stock transfer recorded successfully', 'success');
   };
 
@@ -595,12 +729,11 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
      setReturns(prev => prev.map(r => r.id === id ? { ...r, status } : r));
      if (!isOffline) supabase.from('returns').update({ status }).eq('id', id);
      
-     // Automated Action: If approved, update order status to 'Returned'
      if (status === 'Approved') {
          const ret = returns.find(r => r.id === id);
          if (ret && ret.orderId) {
              updateOrderStatus(ret.orderId, 'Returned');
-             showToast('Order status updated to Returned', 'info');
+             showToast('Order status auto-updated to Returned', 'info');
          }
      }
      
@@ -614,7 +747,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <ShopContext.Provider value={{
-      products, cart, wishlist, compareList, recentlyViewed, isCartOpen, searchQuery, user, orders, customers, warehouses, appSettings, roles, availablePermissions: AVAILABLE_PERMISSIONS, returns, notifications, isOffline, offlineReason,
+      products, cart, wishlist, compareList, recentlyViewed, isCartOpen, searchQuery, user, orders, customers, warehouses, appSettings, roles, availablePermissions: AVAILABLE_PERMISSIONS, returns, notifications, isOffline, offlineReason, isLoading,
       setSearchQuery, addToCart, removeFromCart, updateQuantity, toggleCart, clearCart, toggleWishlist, isInWishlist, addToCompare, removeFromCompare, isInCompare, addToRecentlyViewed,
       totalAmount, toast, showToast, login, logout, register, addReview, addAddress, removeAddress, createOrder, updateUserProfile,
       updateOrderStatus, deleteOrder, deleteProduct, updateProduct, addProduct, updateSettings, updateCustomer, addRole, updateRole, deleteRole, checkPermission, seedRoles,

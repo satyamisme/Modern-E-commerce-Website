@@ -16,9 +16,10 @@ import { InventoryManager } from '../components/admin/InventoryManager';
 import { RoleManager } from '../components/admin/RoleManager';
 import { SystemConfig } from '../components/admin/SystemConfig';
 import { ReturnsManager } from '../components/admin/ReturnsManager';
+import { SkeletonTable } from '../components/SkeletonLoader';
 
 export const AdminDashboard: React.FC = () => {
-  const { user, logout, checkPermission, notifications, markNotificationRead, clearNotifications } = useShop();
+  const { user, logout, checkPermission, notifications, markNotificationRead, clearNotifications, isLoading } = useShop();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'products' | 'orders' | 'customers' | 'inventory' | 'roles' | 'settings' | 'returns'>('dashboard');
   const [showNotifications, setShowNotifications] = useState(false);
   const [lang, setLang] = useState<'EN' | 'AR'>('EN');
@@ -177,14 +178,18 @@ export const AdminDashboard: React.FC = () => {
 
           {/* Dynamic Content */}
           <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-             {activeTab === 'dashboard' && <DashboardOverview />}
-             {activeTab === 'products' && <ProductManager />}
-             {activeTab === 'orders' && <OrderKanban />}
-             {activeTab === 'customers' && <CustomerCRM />}
-             {activeTab === 'inventory' && <InventoryManager />}
-             {activeTab === 'roles' && <RoleManager />}
-             {activeTab === 'settings' && <SystemConfig />}
-             {activeTab === 'returns' && <ReturnsManager />}
+             {isLoading ? <SkeletonTable /> : (
+               <>
+                 {activeTab === 'dashboard' && <DashboardOverview />}
+                 {activeTab === 'products' && <ProductManager />}
+                 {activeTab === 'orders' && <OrderKanban />}
+                 {activeTab === 'customers' && <CustomerCRM />}
+                 {activeTab === 'inventory' && <InventoryManager />}
+                 {activeTab === 'roles' && <RoleManager />}
+                 {activeTab === 'settings' && <SystemConfig />}
+                 {activeTab === 'returns' && <ReturnsManager />}
+               </>
+             )}
           </div>
        </main>
     </div>

@@ -6,9 +6,10 @@ import { ProductCard } from '../components/ProductCard';
 import { SlidersHorizontal, ChevronDown, Check, X, Filter, Search, Star } from 'lucide-react';
 import { SortOption } from '../types';
 import { useShop } from '../context/ShopContext';
+import { SkeletonCard } from '../components/SkeletonLoader';
 
 export const Shop: React.FC = () => {
-  const { searchQuery, setSearchQuery, products } = useShop();
+  const { searchQuery, setSearchQuery, products, isLoading } = useShop();
   const [searchParams] = useSearchParams();
   
   // Local Filter States
@@ -250,7 +251,11 @@ export const Shop: React.FC = () => {
                    </div>
                 )}
 
-                {filteredProducts.length === 0 ? (
+                {isLoading ? (
+                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {[...Array(9)].map((_, i) => <SkeletonCard key={i} />)}
+                   </div>
+                ) : filteredProducts.length === 0 ? (
                   <div className="text-center py-24 bg-white rounded-3xl border border-dashed border-gray-200 flex flex-col items-center justify-center">
                     <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mb-6">
                         <Search size={32} className="text-gray-300" />

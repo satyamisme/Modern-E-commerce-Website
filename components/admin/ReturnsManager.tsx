@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { useShop } from '../../context/ShopContext';
-import { RefreshCcw, CheckCircle, XCircle, Clock, Package } from 'lucide-react';
+import { RefreshCcw, CheckCircle, XCircle, Clock, Package, Trash2 } from 'lucide-react';
 
 export const ReturnsManager: React.FC = () => {
   const { returns, updateReturnStatus } = useShop();
@@ -72,7 +72,7 @@ export const ReturnsManager: React.FC = () => {
                             </span>
                          </td>
                          <td className="p-5 text-right">
-                            {req.status === 'Pending' && (
+                            {req.status === 'Pending' ? (
                                <div className="flex items-center justify-end gap-2">
                                   <button 
                                      onClick={() => {
@@ -97,6 +97,8 @@ export const ReturnsManager: React.FC = () => {
                                      <XCircle size={18}/>
                                   </button>
                                </div>
+                            ) : (
+                                <div className="text-xs text-gray-400 font-bold">Processed</div>
                             )}
                          </td>
                       </tr>

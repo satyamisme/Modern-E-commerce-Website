@@ -89,6 +89,7 @@ export const InventoryManager: React.FC = () => {
            type: newLocation.type as any || 'Retail Shop'
         });
         setNewLocation({ name: '', type: 'Retail Shop', location: { address: '' }, capacity: 1000 });
+        showToast('New location created', 'success');
      }
   };
 

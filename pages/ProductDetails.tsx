@@ -1,14 +1,14 @@
 
-
 import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useShop } from '../context/ShopContext';
 import { Star, Plus, ShieldCheck, Zap, Heart, Truck, Check, Share2, Info, ArrowRight, Minus, ArrowLeftRight, ShoppingBag, CheckCircle, AlertCircle, Package, Clock, CreditCard, ChevronRight, PlayCircle, Maximize2, MessageCircle } from 'lucide-react';
 import { ProductCard } from '../components/ProductCard';
+import { SkeletonProductDetails } from '../components/SkeletonLoader';
 
 export const ProductDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { products, addToCart, toggleWishlist, isInWishlist, addToRecentlyViewed, addReview, user, addToCompare, isInCompare, removeFromCompare, showToast, appSettings } = useShop();
+  const { products, addToCart, toggleWishlist, isInWishlist, addToRecentlyViewed, addReview, user, addToCompare, isInCompare, removeFromCompare, showToast, appSettings, isLoading } = useShop();
   const navigate = useNavigate();
   
   const product = products.find(p => p.id === id);
@@ -148,7 +148,20 @@ Link: ${window.location.href}`;
       window.open(url, '_blank');
   };
 
-  if (!product) return <div>Product not found</div>;
+  if (isLoading) return <SkeletonProductDetails />;
+  
+  if (!product) return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center text-center p-4">
+          <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-6">
+              <ShoppingBag size={40} className="text-gray-400" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Product Not Found</h2>
+          <p className="text-gray-500 mb-8">This item may have been removed or is unavailable.</p>
+          <Link to="/shop" className="px-8 py-3 bg-primary text-white rounded-xl font-bold hover:bg-slate-800 transition-colors">
+              Back to Shop
+          </Link>
+      </div>
+  );
 
   const inStock = currentStock > 0;
 

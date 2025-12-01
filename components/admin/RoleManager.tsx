@@ -70,7 +70,10 @@ export const RoleManager: React.FC = () => {
                             <Edit size={16}/>
                          </button>
                          {!role.isSystem && (
-                            <button onClick={() => deleteRole(role.id)} className="p-1.5 bg-white text-red-600 rounded-lg shadow-sm hover:bg-red-50">
+                            <button 
+                                onClick={() => { if(confirm(`Delete role ${role.name}?`)) deleteRole(role.id) }} 
+                                className="p-1.5 bg-white text-red-600 rounded-lg shadow-sm hover:bg-red-50"
+                            >
                                <Trash2 size={16}/>
                             </button>
                          )}
@@ -85,6 +88,7 @@ export const RoleManager: React.FC = () => {
                                {availablePermissions.find(p => p.key === perm)?.label || perm}
                             </span>
                          ))}
+                         {role.permissions.length === 0 && <span className="text-xs text-gray-400 italic">No permissions</span>}
                       </div>
                    </div>
                    {role.isSystem && (
@@ -99,9 +103,12 @@ export const RoleManager: React.FC = () => {
        {editingRole && (
           <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
              <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
-                <h3 className="text-xl font-bold text-gray-900 mb-4">
-                   {editingRole.id ? 'Edit Role' : 'Create New Role'}
-                </h3>
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-xl font-bold text-gray-900">
+                        {editingRole.id ? 'Edit Role' : 'Create New Role'}
+                    </h3>
+                    <button onClick={() => setEditingRole(null)} className="p-2 hover:bg-gray-100 rounded-full"><X size={20}/></button>
+                </div>
                 
                 <div className="mb-6 space-y-4">
                    <div>

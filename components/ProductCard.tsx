@@ -20,12 +20,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
   const inStock = product.stock > 0;
 
   // Robust Image Selection Logic
+  // Prioritize: Explicit image -> First Gallery Image -> Hero Image -> Generated Seed
   const displayImage = product.image || 
                        (product.images && product.images.length > 0 ? product.images[0] : null) || 
                        product.heroImage || 
                        (product.imageSeed ? `https://picsum.photos/seed/${product.imageSeed}/400/400` : null);
 
-  // Reset error state if product changes
+  // Reset error state if product changes or image source updates
   useEffect(() => {
     setImgError(false);
   }, [product.id, displayImage]);
@@ -70,7 +71,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
       {/* Image Area */}
       <Link to={`/product/${product.id}`} className="block relative p-4 aspect-[4/5] bg-white flex items-center justify-center overflow-hidden">
         {showFallback ? (
-          <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50 rounded-lg">
+          <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50 rounded-lg animate-in fade-in duration-300">
              {getCategoryIcon()}
              <span className="text-[10px] text-gray-400 mt-2 font-medium">No Image</span>
           </div>
