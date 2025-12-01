@@ -1,26 +1,51 @@
-import React, { useState, useRef } from 'react';
+
+import React, { useState, useRef, useEffect } from 'react';
 import { useShop } from '../../context/ShopContext';
-import { Product } from '../../types';
+import { Product, ProductVariant } from '../../types';
 import { 
    Edit, Trash2, Plus, Search, X, 
    FileText, DollarSign, ImageIcon, Layers, Globe, 
-   Upload, Sparkles, Wand2, RefreshCw, Download, Database, MinusCircle, PlusCircle
+   Upload, RefreshCw, Box, CheckCircle, 
+   Palette, ArrowLeft, ChevronRight, Wand2, ChevronLeft, Calculator, Tag, BrainCircuit, Filter
 } from 'lucide-react';
-import { sendMessageToGemini, fetchPhoneSpecs, generateProductImage } from '../../services/geminiService';
+import { fetchPhoneSpecs, findProductImage, searchMobileModels, generateSEO } from '../../services/geminiService';
 
 export const ProductManager: React.FC = () => {
   const { products, addProduct, updateProduct, deleteProduct, appSettings, showToast } = useShop();
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [showBulkModal, setShowBulkModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'basic' | 'pricing' | 'media' | 'specs' | 'seo'>('basic');
-  const [editingProduct, setEditingProduct] = useState<Partial<Product>>({
-     name: '', brand: 'Apple', price: 0, category: 'Smartphones', stock: 10, description: '', specs: {}, images: [], seo: { metaTitle: '', metaDescription: '', keywords: [] }
-  });
-  const [aiLoading, setAiLoading] = useState(false);
-  const [bulkInput, setBulkInput] = useState('');
-  const [bulkProcessing, setBulkProcessing] = useState(false);
+  const [activeTab, setActiveTab] = useState<'basic' | 'variants' | 'media' | 'specs' | 'seo'>('basic');
   
+  const [editingProduct, setEditingProduct] = useState<Partial<Product>>({
+     name: '', brand: 'Apple', price: 0, category: 'Smartphones', stock: 0, description: '', specs: {}, images: [], seo: { metaTitle: '', metaDescription: '', keywords: [] }, colors: [], storageOptions: [], variants: []
+  });
+  
+  const [aiLoading, setAiLoading] = useState(false);
+  const [imageTab, setImageTab] = useState<'fetch' | 'url' | 'upload'>('fetch');
+  const [imageUrlInput, setImageUrlInput] = useState('');
+  
+  // Autocomplete State
+  const [suggestions, setSuggestions] = useState<Array<{model: string, brand: string, variants: string[], year: string}>>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestionLoading, setSuggestionLoading] = useState(false);
+  
+  // Ref for click outside to close autocomplete
+  const autocompleteRef = useRef<HTMLDivElement>(null);
+
+  // Variant Inputs
+  const [colorInput, setColorInput] = useState('');
+  const [storageInput, setStorageInput] = useState('');
+
+  // Smart Bulk Updates State
+  const [bulkColorScope, setBulkColorScope] = useState<string>('all');
+  const [bulkStorageScope, setBulkStorageScope] = useState<string>('all');
+  const [bulkAction, setBulkAction] = useState<string>('price_set'); // 'price_set', 'price_add', 'stock_set'
+  const [bulkValue, setBulkValue] = useState<string>('');
+
+  // Matrix View Filters
+  const [matrixFilterColor, setMatrixFilterColor] = useState<string>('all');
+  const [matrixFilterStorage, setMatrixFilterStorage] = useState<string>('all');
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const filteredProducts = products.filter(p => 
@@ -28,8 +53,52 @@ export const ProductManager: React.FC = () => {
      p.brand.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  // Click Outside Handler for Autocomplete
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (autocompleteRef.current && !autocompleteRef.current.contains(event.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Debounced Model Search
+  useEffect(() => {
+      const delayDebounceFn = setTimeout(async () => {
+        // Only search if user is typing and modal is open
+        if (editingProduct.name && editingProduct.name.length > 2 && showModal && document.activeElement?.getAttribute('name') === 'productName') {
+            setSuggestionLoading(true);
+            const results = await searchMobileModels(editingProduct.name);
+            setSuggestions(results);
+            setSuggestionLoading(false);
+            if(results.length > 0) setShowSuggestions(true);
+        }
+      }, 500);
+
+      return () => clearTimeout(delayDebounceFn);
+  }, [editingProduct.name, showModal]);
+
+  const handleModelSelect = (model: any) => {
+      setEditingProduct(prev => ({
+          ...prev,
+          name: model.model,
+          brand: model.brand,
+          tags: [...(prev.tags || []), ...model.variants, model.year]
+      }));
+      setShowSuggestions(false);
+      handleFetchSpecs(model.model);
+  };
+
   const handleSave = (e: React.FormEvent) => {
      e.preventDefault();
+     
+     // Calculate total stock from variants if they exist
+     const totalStock = editingProduct.variants?.length 
+        ? editingProduct.variants.reduce((acc, v) => acc + v.stock, 0)
+        : Number(editingProduct.stock);
+
      const productData: Product = {
         id: editingProduct.id || `prod-${Date.now()}`,
         name: editingProduct.name!,
@@ -39,13 +108,15 @@ export const ProductManager: React.FC = () => {
         costPrice: Number(editingProduct.costPrice) || 0,
         rating: editingProduct.rating || 0,
         category: editingProduct.category as any || 'Smartphones',
-        colors: editingProduct.colors || ['#000000'],
+        colors: editingProduct.colors || [],
+        storageOptions: editingProduct.storageOptions || [],
+        variants: editingProduct.variants || [],
         specs: editingProduct.specs || {},
         description: editingProduct.description || '',
         imageSeed: editingProduct.imageSeed || Math.floor(Math.random() * 1000),
         images: editingProduct.images || [],
         tags: editingProduct.tags || [],
-        stock: Number(editingProduct.stock),
+        stock: totalStock,
         express: editingProduct.express || false,
         reorderPoint: Number(editingProduct.reorderPoint) || 5,
         supplier: editingProduct.supplier || '',
@@ -60,108 +131,72 @@ export const ProductManager: React.FC = () => {
      showToast('Product saved successfully', 'success');
   };
 
-  const handleAiGenerate = async (field: 'description' | 'seo' | 'image') => {
-     if (!editingProduct.name) {
-        showToast('Please enter a product name first', 'error');
-        return;
-     }
-     setAiLoading(true);
-     try {
-        if (field === 'description') {
-           const prompt = `Write a compelling, sales-oriented product description for a smartphone named "${editingProduct.name}" by ${editingProduct.brand}. Highlight key features like ${JSON.stringify(editingProduct.specs)}. Keep it under 150 words.`;
-           const desc = await sendMessageToGemini(prompt);
-           setEditingProduct(prev => ({ ...prev, description: desc }));
-        } else if (field === 'seo') {
-           const prompt = `Generate SEO metadata for "${editingProduct.name}". Return a JSON object with keys: metaTitle, metaDescription, and keywords (comma separated string).`;
-           const result = await sendMessageToGemini(prompt);
-           // Simple mock parsing since direct JSON from chat isn't guaranteed without structured prompt
-           setEditingProduct(prev => ({ 
-              ...prev, 
-              seo: { 
-                 metaTitle: `${editingProduct.name} | Best Price in Kuwait`, 
-                 metaDescription: `Buy ${editingProduct.name} in Kuwait. Best price, official warranty, fast delivery. ${editingProduct.brand} flagship with amazing features.`, 
-                 keywords: ['smartphone', 'kuwait', editingProduct.brand || 'tech', '5g', 'mobile', 'buy online', 'installment'] 
-              } 
-           }));
-        } else if (field === 'image') {
-            const url = generateProductImage(`${editingProduct.name} ${editingProduct.brand} minimalist sleek`);
-            setEditingProduct(prev => ({ ...prev, images: [...(prev.images || []), url] }));
-        }
-        showToast('AI Generation Complete', 'success');
-     } catch (e) {
-        showToast('AI Generation Failed', 'error');
-     }
-     setAiLoading(false);
-  };
-
-  const handleFetchSpecs = async () => {
-    if(!editingProduct.name) {
+  const handleFetchSpecs = async (modelOverride?: string) => {
+    const modelToFetch = modelOverride || editingProduct.name;
+    if(!modelToFetch) {
        showToast('Enter a model name first', 'error');
        return;
     }
     setAiLoading(true);
-    showToast('AI Agent is researching specs...', 'info');
+    showToast(`Fetching full specs for ${modelToFetch}...`, 'info');
     
-    const data = await fetchPhoneSpecs(editingProduct.name);
+    const data = await fetchPhoneSpecs(modelToFetch);
     
     if(data) {
-       setEditingProduct(prev => ({
-          ...prev,
-          brand: data.brand || prev.brand,
-          price: data.price || prev.price,
-          description: data.description || prev.description,
-          specs: data.specs || prev.specs,
-          tags: data.tags || prev.tags,
-          images: data.images?.length ? [...(prev.images || []), ...data.images] : prev.images,
-          seo: data.seo as any
-       }));
-       showToast('Full specs, SEO & Image fetched!', 'success');
+       setEditingProduct(prev => {
+          const newColors = data.colors && data.colors.length > 0 ? data.colors : prev.colors || [];
+          let newStorage = prev.storageOptions?.length ? prev.storageOptions : ['128GB', '256GB', '512GB'];
+          
+          if (data.specs && data.specs.Memory && typeof data.specs.Memory === 'object') {
+             const internalMem = (data.specs.Memory as any)["Internal"];
+             if (internalMem) {
+                const extracted = internalMem.match(/(\d+(?:GB|TB))/g);
+                if (extracted) {
+                   newStorage = Array.from(new Set(extracted));
+                }
+             }
+          }
+          
+          return {
+            ...prev,
+            brand: data.brand || prev.brand,
+            price: data.price || prev.price,
+            description: data.description || prev.description,
+            specs: data.specs || prev.specs,
+            colors: newColors,
+            storageOptions: newStorage,
+            seo: data.seo as any
+          };
+       });
+       showToast('Full specs & Variants loaded! Check Variants tab.', 'success');
     } else {
-       showToast('Could not fetch specs. Try a clearer model name.', 'error');
+       showToast('Could not fetch specs.', 'error');
     }
     setAiLoading(false);
   };
 
-  const handleBulkImport = async () => {
-     if(!bulkInput.trim()) return;
-     setBulkProcessing(true);
-     const models = bulkInput.split('\n').filter(s => s.trim().length > 0);
-     
-     showToast(`AI Processing ${models.length} models... this may take a moment.`, 'info');
-     
-     let count = 0;
-     for (const modelName of models) {
-        try {
-           const data = await fetchPhoneSpecs(modelName);
-           if (data) {
-              const newProduct: Product = {
-                 id: `prod-${Date.now()}-${Math.random()}`,
-                 name: modelName,
-                 brand: data.brand || 'Generic',
-                 price: data.price || 0,
-                 category: 'Smartphones',
-                 colors: ['#000000'],
-                 specs: data.specs || {},
-                 description: data.description || 'Imported product',
-                 imageSeed: Math.floor(Math.random() * 1000),
-                 images: data.images || [],
-                 tags: data.tags || [],
-                 stock: 10,
-                 rating: 0,
-                 seo: data.seo as any || { metaTitle: modelName, metaDescription: '', keywords: [] }
-              };
-              addProduct(newProduct);
-              count++;
-           }
-        } catch (e) {
-           console.error(`Failed to import ${modelName}`);
-        }
-     }
-     
-     showToast(`Successfully imported ${count} products with full data`, 'success');
-     setBulkProcessing(false);
-     setShowBulkModal(false);
-     setBulkInput('');
+  const handleFetchImages = async () => {
+      if(!editingProduct.name) {
+          showToast('Please enter a product name first', 'error');
+          return;
+      }
+      setAiLoading(true);
+      showToast('Searching web for images...', 'info');
+      const urls = await findProductImage(editingProduct.name);
+      if (urls.length > 0) {
+          setEditingProduct(prev => ({ ...prev, images: [...(prev.images || []), ...urls] }));
+          showToast(`Found ${urls.length} images`, 'success');
+      } else {
+          showToast('No public images found. Try uploading or URL.', 'error');
+      }
+      setAiLoading(false);
+  };
+
+  const handleAddImageUrl = () => {
+      if(imageUrlInput) {
+          setEditingProduct(prev => ({ ...prev, images: [...(prev.images || []), imageUrlInput] }));
+          setImageUrlInput('');
+      }
   };
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -171,271 +206,771 @@ export const ProductManager: React.FC = () => {
      }
   };
 
-  const addSpecField = () => {
+  // --- Improved Variant Logic ---
+  const addColor = (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' && colorInput.trim()) {
+          e.preventDefault();
+          if (!editingProduct.colors?.includes(colorInput.trim())) {
+              setEditingProduct(prev => ({ ...prev, colors: [...(prev.colors || []), colorInput.trim()] }));
+          }
+          setColorInput('');
+      }
+  };
+
+  const addStorage = (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' && storageInput.trim()) {
+          e.preventDefault();
+          if (!editingProduct.storageOptions?.includes(storageInput.trim())) {
+              setEditingProduct(prev => ({ ...prev, storageOptions: [...(prev.storageOptions || []), storageInput.trim()] }));
+          }
+          setStorageInput('');
+      }
+  };
+
+  const generateVariants = () => {
+      const colors = editingProduct.colors?.length ? editingProduct.colors : ['Default'];
+      const storages = editingProduct.storageOptions?.length ? editingProduct.storageOptions : ['Standard'];
+      const basePrice = editingProduct.price || 0;
+      const currentVariants = editingProduct.variants || [];
+
+      const newVariants: ProductVariant[] = [];
+
+      colors.forEach(color => {
+          storages.forEach(storage => {
+              const existing = currentVariants.find(v => v.color === color && v.storage === storage);
+
+              if (existing) {
+                 newVariants.push(existing);
+              } else {
+                 let priceMod = 0;
+                 if (storage.includes('256')) priceMod = 20;
+                 if (storage.includes('512')) priceMod = 50;
+                 if (storage.includes('1TB')) priceMod = 100;
+
+                 newVariants.push({
+                    id: `var-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                    color: color,
+                    storage: storage,
+                    price: basePrice + priceMod,
+                    stock: 0,
+                    sku: `${editingProduct.brand?.substring(0,3).toUpperCase()}-${editingProduct.name?.substring(0,3).toUpperCase().replace(/\s/g, '')}-${color.substring(0,3).toUpperCase()}-${storage}`
+                 });
+              }
+          });
+      });
+
+      setEditingProduct(prev => ({ ...prev, variants: newVariants }));
+      showToast(`Matrix updated. Total variants: ${newVariants.length}`, 'success');
+  };
+
+  const updateVariant = (id: string, field: keyof ProductVariant, value: any) => {
       setEditingProduct(prev => ({
           ...prev,
-          specs: { ...prev.specs, "": "" }
+          variants: prev.variants?.map(v => v.id === id ? { ...v, [field]: value } : v)
       }));
   };
 
-  const removeSpecField = (keyToRemove: string) => {
-      if(!editingProduct.specs) return;
-      const newSpecs = { ...editingProduct.specs };
-      delete newSpecs[keyToRemove];
-      setEditingProduct(prev => ({ ...prev, specs: newSpecs }));
-  };
+  // --- Smart Bulk Updates ---
+  const applySmartBulkUpdate = () => {
+      if (!bulkValue) return;
+      const val = parseFloat(bulkValue);
+      const stockVal = parseInt(bulkValue);
 
-  const updateSpecKey = (oldKey: string, newKey: string) => {
-      if(!editingProduct.specs) return;
-      const { [oldKey]: value, ...rest } = editingProduct.specs;
-      const newSpecs = { ...rest, [newKey]: value };
-      setEditingProduct(prev => ({ ...prev, specs: newSpecs }));
-  };
-
-  const updateSpecValue = (key: string, value: string) => {
-      if(!editingProduct.specs) return;
       setEditingProduct(prev => ({
           ...prev,
-          specs: { ...prev.specs, [key]: value }
+          variants: prev.variants?.map(v => {
+             const matchColor = bulkColorScope === 'all' || v.color === bulkColorScope;
+             const matchStorage = bulkStorageScope === 'all' || v.storage === bulkStorageScope;
+             
+             if (!matchColor || !matchStorage) return v;
+
+             let newV = { ...v };
+             switch(bulkAction) {
+                case 'price_set': newV.price = val; break;
+                case 'price_add': newV.price = v.price + val; break;
+                case 'price_sub': newV.price = Math.max(0, v.price - val); break;
+                case 'stock_set': newV.stock = stockVal; break;
+                case 'stock_add': newV.stock = v.stock + stockVal; break;
+             }
+             return newV;
+          })
       }));
+      
+      showToast('Bulk update applied successfully', 'success');
+      setBulkValue('');
+  };
+
+  // AI SEO Generator
+  const handleGenerateSEO = async () => {
+      if(!editingProduct.name || !editingProduct.description) {
+          showToast('Product name and description required for AI SEO', 'error');
+          return;
+      }
+      setAiLoading(true);
+      const result = await generateSEO(editingProduct.name, editingProduct.description);
+      if(result) {
+          setEditingProduct(prev => ({
+              ...prev,
+              seo: {
+                  metaTitle: result.metaTitle,
+                  metaDescription: result.metaDescription,
+                  keywords: result.keywords
+              }
+          }));
+          showToast('Sales-Optimized SEO Metadata Generated!', 'success');
+      } else {
+          showToast('Failed to generate SEO', 'error');
+      }
+      setAiLoading(false);
+  };
+
+  const renderSpecGroup = (groupName: string, groupData: any) => {
+      return (
+          <div key={groupName} className="mb-6 bg-gray-50 rounded-xl border border-gray-200 overflow-hidden">
+              <div className="bg-gray-100 px-4 py-3 border-b border-gray-200 font-bold text-gray-700 flex justify-between items-center text-sm">
+                  <span>{groupName}</span>
+                  <button type="button" onClick={() => {
+                      const newSpecs = {...editingProduct.specs};
+                      delete newSpecs[groupName];
+                      setEditingProduct({...editingProduct, specs: newSpecs});
+                  }} className="text-red-400 hover:text-red-600"><Trash2 size={14}/></button>
+              </div>
+              <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {Object.entries(groupData).map(([key, val]: any) => (
+                      <div key={key} className="flex flex-col">
+                          <label className="text-[10px] uppercase font-bold text-gray-400 mb-1 truncate" title={key}>{key}</label>
+                          <input 
+                              type="text" 
+                              value={val} 
+                              onChange={(e) => {
+                                  const newGroup = {...groupData, [key]: e.target.value};
+                                  setEditingProduct(prev => ({
+                                      ...prev,
+                                      specs: { ...prev.specs, [groupName]: newGroup }
+                                  }));
+                              }}
+                              className="p-2 bg-white border border-gray-200 rounded-lg text-sm focus:border-primary outline-none"
+                          />
+                      </div>
+                  ))}
+                  <button type="button" className="flex items-center justify-center p-2 border border-dashed border-gray-300 rounded-lg text-gray-400 hover:text-primary hover:border-primary transition-colors text-xs font-bold" onClick={() => {
+                       const newGroup = {...groupData, "New Feature": ""};
+                       setEditingProduct(prev => ({ ...prev, specs: { ...prev.specs, [groupName]: newGroup } }));
+                  }}>
+                      <Plus size={14} className="mr-1"/> Add Field
+                  </button>
+              </div>
+          </div>
+      );
+  };
+
+  const TabButton = ({ tab, icon: Icon, label }: any) => (
+    <button 
+        type="button"
+        onClick={() => setActiveTab(tab)} 
+        className={`px-6 py-4 text-sm font-bold uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap border-b-2 ${activeTab === tab ? 'text-primary border-primary bg-blue-50/10' : 'text-gray-400 border-transparent hover:text-gray-600'}`}
+    >
+        <Icon size={16}/> {label}
+    </button>
+  );
+
+  const handleNext = () => {
+      const tabs: typeof activeTab[] = ['basic', 'variants', 'media', 'specs', 'seo'];
+      const idx = tabs.indexOf(activeTab);
+      if (idx < tabs.length - 1) setActiveTab(tabs[idx + 1]);
+  };
+
+  const handleBack = () => {
+      const tabs: typeof activeTab[] = ['basic', 'variants', 'media', 'specs', 'seo'];
+      const idx = tabs.indexOf(activeTab);
+      if (idx > 0) setActiveTab(tabs[idx - 1]);
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
        
        {/* Toolbar */}
-       <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
-          <div className="relative w-full md:w-96">
-             <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
-             <input 
-               type="text" 
-               placeholder="Search products..." 
-               value={searchTerm}
-               onChange={(e) => setSearchTerm(e.target.value)}
-               className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:border-primary outline-none"
-             />
-          </div>
-          <div className="flex gap-3">
-             <button 
-                onClick={() => setShowBulkModal(true)}
-                className="px-6 py-2.5 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition-colors flex items-center gap-2"
-             >
-                <Database size={18} /> Bulk Import
-             </button>
-             <button 
-                onClick={() => {
-                    setEditingProduct({ name: '', brand: 'Apple', price: 0, category: 'Smartphones', stock: 10, description: '', specs: {}, images: [], seo: { metaTitle: '', metaDescription: '', keywords: [] } });
-                    setActiveTab('basic');
-                    setShowModal(true);
-                }}
-                className="px-6 py-2.5 bg-primary text-white font-bold rounded-xl hover:bg-slate-800 transition-colors flex items-center gap-2 shadow-lg shadow-primary/20"
-             >
-                <Plus size={18} /> Add Product
-             </button>
-          </div>
-       </div>
+       {!showModal && (
+           <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
+              <div className="relative w-full md:w-96">
+                 <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
+                 <input 
+                   type="text" 
+                   placeholder="Search products..." 
+                   value={searchTerm}
+                   onChange={(e) => setSearchTerm(e.target.value)}
+                   className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:border-primary outline-none"
+                 />
+              </div>
+              <div className="flex gap-3">
+                 <button 
+                    onClick={() => {
+                        setEditingProduct({ name: '', brand: 'Apple', price: 0, category: 'Smartphones', stock: 0, description: '', specs: {}, images: [], seo: { metaTitle: '', metaDescription: '', keywords: [] }, colors: [], storageOptions: [], variants: [] });
+                        setActiveTab('basic');
+                        setShowModal(true);
+                    }}
+                    className="px-6 py-2.5 bg-primary text-white font-bold rounded-xl hover:bg-slate-800 transition-colors flex items-center gap-2 shadow-lg shadow-primary/20"
+                 >
+                    <Plus size={18} /> Add Product
+                 </button>
+              </div>
+           </div>
+       )}
 
        {/* List View */}
-       <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-          <table className="w-full text-left">
-             <thead className="bg-gray-50/50 text-gray-400 text-[10px] uppercase font-bold tracking-wider">
-                <tr>
-                   <th className="p-5">Product Details</th>
-                   <th className="p-5">Price / Cost</th>
-                   <th className="p-5">Inventory</th>
-                   <th className="p-5 text-right">Actions</th>
-                </tr>
-             </thead>
-             <tbody className="divide-y divide-gray-50">
-                {filteredProducts.map(product => (
-                   <tr key={product.id} className="hover:bg-gray-50/50 group transition-colors">
-                      <td className="p-5">
-                         <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-xl bg-gray-50 flex-shrink-0 p-1 border border-gray-200">
-                               <img src={product.images?.[0] || `https://picsum.photos/seed/${product.imageSeed}/100/100`} className="w-full h-full object-contain" alt={product.name}/>
-                            </div>
-                            <div>
-                               <p className="font-bold text-gray-900 text-sm">{product.name}</p>
-                               <p className="text-xs text-gray-500 font-medium">{product.brand} • {product.category}</p>
-                            </div>
-                         </div>
-                      </td>
-                      <td className="p-5">
-                         <div className="flex flex-col">
-                            <span className="font-bold text-slate-900 text-sm">{product.price} {appSettings.currency}</span>
-                            <div className="flex items-center gap-1 text-xs text-gray-400">
-                               <span>Cost: {product.costPrice || '-'}</span>
-                               {product.costPrice && (
-                                  <span className="text-green-600 font-bold bg-green-50 px-1 rounded">
-                                     {Math.round(((product.price - product.costPrice) / product.price) * 100)}%
-                                  </span>
-                               )}
-                            </div>
-                         </div>
-                      </td>
-                      <td className="p-5">
-                         <div className="flex items-center gap-2">
-                            <div className={`w-2 h-2 rounded-full ${product.stock > 10 ? 'bg-green-500' : product.stock > 0 ? 'bg-orange-500' : 'bg-red-500'}`}></div>
-                            <span className="text-sm font-medium text-gray-700">{product.stock} units</span>
-                         </div>
-                      </td>
-                      <td className="p-5 text-right">
-                         <div className="flex items-center justify-end gap-2">
-                            <button 
-                               onClick={() => { setEditingProduct(product); setActiveTab('basic'); setShowModal(true); }}
-                               className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                            >
-                                <Edit size={16}/>
-                            </button>
-                            <button 
-                               onClick={() => { if(window.confirm('Delete?')) deleteProduct(product.id) }}
-                               className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            >
-                               <Trash2 size={16}/>
-                            </button>
-                         </div>
-                      </td>
+       {!showModal && (
+           <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+              <table className="w-full text-left">
+                 <thead className="bg-gray-50/50 text-gray-400 text-[10px] uppercase font-bold tracking-wider">
+                    <tr>
+                       <th className="p-5">Product Details</th>
+                       <th className="p-5">Base Price</th>
+                       <th className="p-5">Total Inventory</th>
+                       <th className="p-5 text-right">Actions</th>
                    </tr>
-                ))}
-             </tbody>
-          </table>
-       </div>
+                 </thead>
+                 <tbody className="divide-y divide-gray-50">
+                    {filteredProducts.map(product => (
+                       <tr key={product.id} className="hover:bg-gray-50/50 group transition-colors">
+                          <td className="p-5">
+                             <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-xl bg-gray-50 flex-shrink-0 p-1 border border-gray-200">
+                                   <img src={product.images?.[0] || `https://picsum.photos/seed/${product.imageSeed}/100/100`} className="w-full h-full object-contain" alt={product.name}/>
+                                </div>
+                                <div>
+                                   <p className="font-bold text-gray-900 text-sm">{product.name}</p>
+                                   <p className="text-xs text-gray-500 font-medium">{product.brand} • {product.category}</p>
+                                </div>
+                             </div>
+                          </td>
+                          <td className="p-5">
+                             <span className="font-bold text-slate-900 text-sm">{product.price} {appSettings.currency}</span>
+                          </td>
+                          <td className="p-5">
+                             <div className="flex items-center gap-2">
+                                <div className={`w-2 h-2 rounded-full ${product.stock > 10 ? 'bg-green-500' : product.stock > 0 ? 'bg-orange-500' : 'bg-red-500'}`}></div>
+                                <span className="text-sm font-medium text-gray-700">{product.stock} units</span>
+                             </div>
+                          </td>
+                          <td className="p-5 text-right">
+                             <div className="flex items-center justify-end gap-2">
+                                <button 
+                                   onClick={() => { setEditingProduct(product); setActiveTab('basic'); setShowModal(true); }}
+                                   className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                >
+                                    <Edit size={16}/>
+                                </button>
+                                <button 
+                                   onClick={() => { if(window.confirm('Delete?')) deleteProduct(product.id) }}
+                                   className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                >
+                                   <Trash2 size={16}/>
+                                </button>
+                             </div>
+                          </td>
+                       </tr>
+                    ))}
+                 </tbody>
+              </table>
+           </div>
+       )}
 
        {/* Editor Modal */}
        {showModal && (
           <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[95vh]">
+             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl overflow-hidden flex flex-col h-[90vh]">
                 <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-                   <h3 className="font-bold text-xl text-gray-900 flex items-center gap-2">
-                      {editingProduct.id ? <Edit size={20}/> : <Plus size={20}/>}
-                      {editingProduct.id ? 'Edit Product' : 'New Product'}
-                   </h3>
-                   <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-200 rounded-full"><X size={20}/></button>
+                   <div className="flex items-center gap-3">
+                       <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-200 rounded-xl transition-colors">
+                           <ArrowLeft size={20} className="text-gray-600"/>
+                       </button>
+                       <h3 className="font-bold text-xl text-gray-900 flex items-center gap-2">
+                          {editingProduct.id ? 'Edit Product' : 'New Product'}
+                       </h3>
+                   </div>
+                   <div className="flex gap-2">
+                        <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-bold text-gray-700 hover:bg-gray-50">Cancel</button>
+                        <button type="submit" form="productForm" className="px-6 py-2 bg-primary text-white rounded-lg text-sm font-bold hover:bg-slate-800 shadow-md">Save Changes</button>
+                   </div>
                 </div>
                 
-                <div className="flex border-b border-gray-100 overflow-x-auto">
-                  {['basic', 'pricing', 'media', 'specs', 'seo'].map(tab => (
-                     <button 
-                        key={tab} 
-                        onClick={() => setActiveTab(tab as any)} 
-                        className={`px-6 py-4 text-sm font-bold uppercase tracking-wider transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === tab ? 'text-primary border-b-2 border-primary bg-blue-50/20' : 'text-gray-400 hover:text-gray-600'}`}
-                     >
-                        {tab === 'basic' && <FileText size={16}/>}
-                        {tab === 'pricing' && <DollarSign size={16}/>}
-                        {tab === 'media' && <ImageIcon size={16}/>}
-                        {tab === 'specs' && <Layers size={16}/>}
-                        {tab === 'seo' && <Globe size={16}/>}
-                        {tab}
-                     </button>
-                  ))}
+                <div className="flex border-b border-gray-100 overflow-x-auto bg-white px-4">
+                    <TabButton tab="basic" icon={FileText} label="Basic Info" />
+                    <TabButton tab="variants" icon={Box} label="Variants & Stock" />
+                    <TabButton tab="media" icon={ImageIcon} label="Media" />
+                    <TabButton tab="specs" icon={Layers} label="Specifications" />
+                    <TabButton tab="seo" icon={Globe} label="SEO" />
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-gray-50/30">
+                <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-gray-50/50">
                    <form id="productForm" onSubmit={handleSave}>
+                      
+                      {/* --- BASIC INFO TAB --- */}
                       {activeTab === 'basic' && (
-                         <div className="grid grid-cols-2 gap-6">
-                            <div className="col-span-2 relative">
-                                <label className="block text-sm font-bold text-gray-700 mb-2">Product Name (Model)</label>
+                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            <div className="lg:col-span-2 space-y-6">
+                                <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                                    <h4 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><FileText size={18}/> Product Identity</h4>
+                                    <div className="grid grid-cols-2 gap-6">
+                                        <div className="col-span-2 relative group" ref={autocompleteRef}>
+                                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Product Model Name</label>
+                                            <input 
+                                                type="text" 
+                                                name="productName"
+                                                required 
+                                                value={editingProduct.name} 
+                                                onChange={e => { 
+                                                    setEditingProduct({...editingProduct, name: e.target.value}); 
+                                                }}
+                                                onFocus={() => {
+                                                    if(editingProduct.name && editingProduct.name.length > 2) setShowSuggestions(true);
+                                                }}
+                                                className="w-full p-3 bg-white border border-gray-200 rounded-xl focus:border-primary outline-none transition-all font-medium text-lg" 
+                                                placeholder="e.g. iPhone 15 Pro Max"
+                                                autoComplete="off"
+                                            />
+                                            {suggestionLoading && <div className="absolute right-3 top-9"><RefreshCw size={16} className="animate-spin text-gray-400"/></div>}
+                                            
+                                            {showSuggestions && suggestions.length > 0 && (
+                                                <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-2xl border border-gray-100 z-50 overflow-hidden max-h-60 overflow-y-auto custom-scrollbar">
+                                                    {suggestions.map((item, i) => (
+                                                        <div 
+                                                            key={i} 
+                                                            onClick={() => handleModelSelect(item)} 
+                                                            className="p-3 hover:bg-blue-50 cursor-pointer border-b border-gray-50 last:border-0 transition-colors"
+                                                        >
+                                                            <div className="font-bold text-gray-900">{item.model}</div>
+                                                            <div className="text-xs text-gray-500 flex gap-2">
+                                                                <span>{item.brand}</span>
+                                                                <span>•</span>
+                                                                <span>{item.year}</span>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Brand</label>
+                                            <select value={editingProduct.brand} onChange={e => setEditingProduct({...editingProduct, brand: e.target.value})} className="w-full p-3 bg-white border border-gray-200 rounded-xl focus:border-primary outline-none">
+                                                {['Apple', 'Samsung', 'Google', 'Sony', 'OnePlus', 'Xiaomi', 'Huawei', 'Honor', 'Nebula', 'Nothing'].map(b => <option key={b} value={b}>{b}</option>)}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Category</label>
+                                            <select value={editingProduct.category} onChange={e => setEditingProduct({...editingProduct, category: e.target.value as any})} className="w-full p-3 bg-white border border-gray-200 rounded-xl focus:border-primary outline-none">
+                                                {['Smartphones', 'Tablets', 'Wearables', 'Audio', 'Accessories'].map(c => <option key={c} value={c}>{c}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="col-span-2">
+                                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Description</label>
+                                            <textarea value={editingProduct.description} onChange={e => setEditingProduct({...editingProduct, description: e.target.value})} className="w-full p-3 bg-white border border-gray-200 rounded-xl focus:border-primary outline-none h-32 resize-none" placeholder="Enter product description..."></textarea>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-6">
+                                <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                                    <h4 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><DollarSign size={18}/> Base Pricing</h4>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Base Selling Price (KWD)</label>
+                                            <input type="number" required value={editingProduct.price} onChange={e => setEditingProduct({...editingProduct, price: parseFloat(e.target.value)})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary outline-none font-bold text-lg" />
+                                            <p className="text-[10px] text-gray-400 mt-1">This price applies if no variant specific price is set.</p>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Original Price (optional)</label>
+                                            <input type="number" value={editingProduct.originalPrice || ''} onChange={e => setEditingProduct({...editingProduct, originalPrice: parseFloat(e.target.value)})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary outline-none text-gray-500" placeholder="0.00" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Reorder Point</label>
+                                            <input type="number" value={editingProduct.reorderPoint || 5} onChange={e => setEditingProduct({...editingProduct, reorderPoint: parseFloat(e.target.value)})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary outline-none" />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Enhanced Stock & Price Snapshot */}
+                            <div className="col-span-1 lg:col-span-3 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                                <div className="flex justify-between items-center mb-4">
+                                   <h4 className="font-bold text-gray-900 flex items-center gap-2"><Box size={18}/> Stock & Price Snapshot</h4>
+                                   <div className="text-xs font-bold text-gray-500 bg-gray-50 px-3 py-1 rounded-lg border border-gray-200">
+                                      Total Variants: {editingProduct.variants?.length || 0}
+                                   </div>
+                                </div>
+                                
+                                {editingProduct.variants && editingProduct.variants.length > 0 ? (
+                                   <div className="overflow-x-auto border border-gray-200 rounded-xl">
+                                      <table className="w-full text-sm text-left">
+                                         <thead className="bg-gray-50 text-xs text-gray-500 uppercase font-bold tracking-wider">
+                                            <tr>
+                                               <th className="p-3">Color</th>
+                                               <th className="p-3">Storage</th>
+                                               <th className="p-3">Price</th>
+                                               <th className="p-3 text-right">Stock</th>
+                                            </tr>
+                                         </thead>
+                                         <tbody className="divide-y divide-gray-100">
+                                            {editingProduct.variants.map((v, i) => (
+                                               <tr key={i} className="hover:bg-gray-50 transition-colors">
+                                                  <td className="p-3 font-medium text-gray-900 flex items-center gap-2">
+                                                     <div className="w-3 h-3 rounded-full border border-gray-200 shadow-sm" style={{backgroundColor: v.color}}></div>
+                                                     {v.color}
+                                                  </td>
+                                                  <td className="p-3 text-gray-600 font-bold">{v.storage}</td>
+                                                  <td className="p-3 font-medium">{v.price} KWD</td>
+                                                  <td className="p-3 text-right">
+                                                     <span className={`px-2 py-0.5 rounded text-xs font-bold ${v.stock > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                        {v.stock}
+                                                     </span>
+                                                  </td>
+                                               </tr>
+                                            ))}
+                                         </tbody>
+                                      </table>
+                                   </div>
+                                ) : (
+                                   <div className="text-center py-8 text-gray-400 text-sm bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                                      No variants generated yet. Go to "Variants & Stock" tab to create them.
+                                   </div>
+                                )}
+                            </div>
+                         </div>
+                      )}
+
+                      {/* --- VARIANTS & STOCK TAB --- */}
+                      {activeTab === 'variants' && (
+                          <div className="space-y-6">
+                              {/* Attribute Builder */}
+                              <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                                  <h4 className="font-bold text-gray-900 mb-6 flex items-center gap-2"><Palette size={18}/> 1. Define Attributes & Generate</h4>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                      {/* Colors */}
+                                      <div className="bg-gray-50 p-5 rounded-xl border border-gray-100">
+                                          <div className="flex justify-between items-center mb-3">
+                                             <label className="text-xs font-bold text-gray-700 uppercase">Colors</label>
+                                             <span className="text-[10px] text-gray-400">{editingProduct.colors?.length || 0} selected</span>
+                                          </div>
+                                          
+                                          {/* Visual Color Input */}
+                                          <div className="relative mb-3">
+                                              <input 
+                                                  type="text" 
+                                                  placeholder="e.g. Titanium Blue"
+                                                  value={colorInput}
+                                                  onChange={e => setColorInput(e.target.value)}
+                                                  onKeyDown={addColor}
+                                                  className="w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:border-primary outline-none focus:ring-2 focus:ring-primary/10 transition-all"
+                                              />
+                                              <div className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border border-gray-300 shadow-sm" style={{backgroundColor: colorInput || '#fff'}}></div>
+                                              <button type="button" onClick={() => addColor({key: 'Enter', preventDefault: () => {}} as any)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 transition-colors">
+                                                 <Plus size={14} />
+                                              </button>
+                                          </div>
+
+                                          <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto custom-scrollbar p-1">
+                                              {editingProduct.colors?.map((color, i) => (
+                                                  <div key={i} className="group flex items-center gap-2 bg-white pl-2 pr-1 py-1.5 rounded-lg border border-gray-200 shadow-sm hover:border-primary transition-colors">
+                                                      <div className="w-5 h-5 rounded-full border border-gray-100 shadow-inner" style={{backgroundColor: color}}></div>
+                                                      <span className="text-sm font-bold text-gray-700">{color}</span>
+                                                      <button type="button" onClick={() => setEditingProduct(prev => ({...prev, colors: prev.colors?.filter(c => c !== color)}))} className="p-1 hover:bg-red-50 text-gray-300 hover:text-red-500 rounded-full transition-colors"><X size={12}/></button>
+                                                  </div>
+                                              ))}
+                                              {(!editingProduct.colors || editingProduct.colors.length === 0) && (
+                                                 <span className="text-xs text-gray-400 italic">No colors added. Press Enter to add.</span>
+                                              )}
+                                          </div>
+                                      </div>
+
+                                      {/* Storage */}
+                                      <div className="bg-gray-50 p-5 rounded-xl border border-gray-100">
+                                          <div className="flex justify-between items-center mb-3">
+                                             <label className="text-xs font-bold text-gray-700 uppercase">Storage / Size</label>
+                                             <span className="text-[10px] text-gray-400">{editingProduct.storageOptions?.length || 0} selected</span>
+                                          </div>
+                                          
+                                          <div className="relative mb-3">
+                                              <input 
+                                                  type="text" 
+                                                  placeholder="e.g. 256GB"
+                                                  value={storageInput}
+                                                  onChange={e => setStorageInput(e.target.value)}
+                                                  onKeyDown={addStorage}
+                                                  className="w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:border-primary outline-none focus:ring-2 focus:ring-primary/10 transition-all"
+                                              />
+                                              <Tag size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
+                                              <button type="button" onClick={() => addStorage({key: 'Enter', preventDefault: () => {}} as any)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 transition-colors">
+                                                 <Plus size={14} />
+                                              </button>
+                                          </div>
+
+                                          <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto custom-scrollbar p-1">
+                                              {editingProduct.storageOptions?.map((size, i) => (
+                                                  <div key={i} className="flex items-center gap-2 bg-white pl-3 pr-2 py-1.5 rounded-lg border border-gray-200 shadow-sm hover:border-blue-500 transition-colors">
+                                                      <span className="text-sm font-bold text-gray-700">{size}</span>
+                                                      <button type="button" onClick={() => setEditingProduct(prev => ({...prev, storageOptions: prev.storageOptions?.filter(s => s !== size)}))} className="p-1 hover:bg-red-50 text-gray-300 hover:text-red-500 rounded-full transition-colors"><X size={12}/></button>
+                                                  </div>
+                                              ))}
+                                              {(!editingProduct.storageOptions || editingProduct.storageOptions.length === 0) && (
+                                                 <span className="text-xs text-gray-400 italic">No options added.</span>
+                                              )}
+                                          </div>
+                                          
+                                          <div className="mt-2 flex gap-2">
+                                              {['128GB', '256GB', '512GB', '1TB'].map(s => (
+                                                  <button 
+                                                      key={s} 
+                                                      type="button" 
+                                                      onClick={() => {
+                                                        if (!editingProduct.storageOptions?.includes(s)) {
+                                                            setEditingProduct(prev => ({...prev, storageOptions: [...(prev.storageOptions || []), s]}));
+                                                        }
+                                                      }}
+                                                      className="px-2 py-1 text-[10px] bg-white border border-gray-200 rounded hover:border-blue-500 hover:text-blue-600 transition-colors"
+                                                  >
+                                                      + {s}
+                                                  </button>
+                                              ))}
+                                          </div>
+                                      </div>
+                                  </div>
+                                  
+                                  <div className="mt-6 flex justify-end">
+                                      <button type="button" onClick={generateVariants} className="px-8 py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-black transition-colors flex items-center gap-2 shadow-lg shadow-gray-900/20 active:scale-95">
+                                          <Wand2 size={18}/> Generate Matrix ({((editingProduct.colors?.length || 1) * (editingProduct.storageOptions?.length || 1))} Variants)
+                                      </button>
+                                  </div>
+                              </div>
+
+                              {/* Smart Modifiers - Bulk Actions */}
+                              {editingProduct.variants && editingProduct.variants.length > 0 && (
+                                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-5 rounded-xl border border-blue-100 flex flex-col md:flex-row flex-wrap items-center gap-4 shadow-inner">
+                                      <div className="flex items-center gap-2 text-blue-800 font-bold text-sm mr-auto">
+                                          <Calculator size={18}/> Smart Modifiers <span className="text-[10px] font-normal text-blue-600 ml-1">(Bulk Update)</span>
+                                      </div>
+                                      
+                                      {/* Scope Selection */}
+                                      <div className="flex gap-2">
+                                          <div className="bg-white p-1 rounded-lg border border-blue-100 shadow-sm flex flex-col min-w-[100px]">
+                                              <span className="text-[9px] font-bold text-gray-400 uppercase px-2 pt-0.5">Color Scope</span>
+                                              <select 
+                                                  value={bulkColorScope} 
+                                                  onChange={(e) => setBulkColorScope(e.target.value)}
+                                                  className="text-xs font-bold text-gray-700 bg-transparent outline-none cursor-pointer hover:text-primary p-1"
+                                              >
+                                                  <option value="all">All Colors</option>
+                                                  {editingProduct.colors?.map(c => <option key={`c-${c}`} value={c}>{c}</option>)}
+                                              </select>
+                                          </div>
+
+                                          <div className="bg-white p-1 rounded-lg border border-blue-100 shadow-sm flex flex-col min-w-[100px]">
+                                              <span className="text-[9px] font-bold text-gray-400 uppercase px-2 pt-0.5">Storage Scope</span>
+                                              <select 
+                                                  value={bulkStorageScope} 
+                                                  onChange={(e) => setBulkStorageScope(e.target.value)}
+                                                  className="text-xs font-bold text-gray-700 bg-transparent outline-none cursor-pointer hover:text-primary p-1"
+                                              >
+                                                  <option value="all">All Sizes</option>
+                                                  {editingProduct.storageOptions?.map(s => <option key={`s-${s}`} value={s}>{s}</option>)}
+                                              </select>
+                                          </div>
+                                      </div>
+
+                                      <div className="h-8 w-px bg-blue-200 hidden md:block"></div>
+                                      
+                                      <div className="flex items-center gap-2">
+                                          <select 
+                                              value={bulkAction} 
+                                              onChange={(e) => setBulkAction(e.target.value)}
+                                              className="p-2 bg-white rounded-lg border border-blue-200 text-xs font-bold text-gray-700 outline-none"
+                                          >
+                                              <option value="price_set">Set Price To</option>
+                                              <option value="price_add">Add to Price</option>
+                                              <option value="price_sub">Subtract from Price</option>
+                                              <option value="stock_set">Set Stock To</option>
+                                              <option value="stock_add">Add to Stock</option>
+                                          </select>
+                                          
+                                          <input 
+                                              type="number" 
+                                              placeholder="Value..." 
+                                              value={bulkValue}
+                                              onChange={(e) => setBulkValue(e.target.value)}
+                                              className="w-20 p-2 text-xs font-bold border border-blue-200 rounded-lg outline-none focus:border-blue-500 shadow-sm"
+                                          />
+                                          <button 
+                                              type="button" 
+                                              onClick={applySmartBulkUpdate} 
+                                              className="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 shadow-md transition-all active:translate-y-0.5"
+                                          >
+                                              Apply
+                                          </button>
+                                      </div>
+                                  </div>
+                              )}
+
+                              {/* Visual Matrix Table */}
+                              {editingProduct.variants && editingProduct.variants.length > 0 && (
+                                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2">
+                                      <div className="p-5 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-center bg-gray-50 gap-4">
+                                          <div className="flex items-center gap-3">
+                                              <h4 className="font-bold text-gray-900 flex items-center gap-2"><Layers size={18}/> Variant Matrix</h4>
+                                              <div className="text-xs font-bold text-gray-500 bg-white border border-gray-200 px-3 py-1 rounded-full">
+                                                  Total Stock: <span className="text-primary">{editingProduct.variants.reduce((a,b) => a + b.stock, 0)}</span>
+                                              </div>
+                                          </div>
+
+                                          {/* View Filters */}
+                                          <div className="flex items-center gap-2">
+                                              <Filter size={14} className="text-gray-400"/>
+                                              <span className="text-xs font-bold text-gray-500 uppercase">Filter View:</span>
+                                              <select 
+                                                  value={matrixFilterColor} 
+                                                  onChange={e => setMatrixFilterColor(e.target.value)}
+                                                  className="p-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-700 focus:border-primary outline-none"
+                                              >
+                                                  <option value="all">All Colors</option>
+                                                  {editingProduct.colors?.map(c => <option key={c} value={c}>{c}</option>)}
+                                              </select>
+                                              <select 
+                                                  value={matrixFilterStorage} 
+                                                  onChange={e => setMatrixFilterStorage(e.target.value)}
+                                                  className="p-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-700 focus:border-primary outline-none"
+                                              >
+                                                  <option value="all">All Storage</option>
+                                                  {editingProduct.storageOptions?.map(s => <option key={s} value={s}>{s}</option>)}
+                                              </select>
+                                          </div>
+                                      </div>
+
+                                      <div className="overflow-x-auto">
+                                          <table className="w-full text-left border-collapse">
+                                              <thead>
+                                                  <tr className="bg-gray-50 text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100">
+                                                      <th className="p-4 pl-6">Variant Info</th>
+                                                      <th className="p-4 w-48">SKU</th>
+                                                      <th className="p-4 w-40">Price (KWD)</th>
+                                                      <th className="p-4 w-32">Stock</th>
+                                                      <th className="p-4 w-12"></th>
+                                                  </tr>
+                                              </thead>
+                                              <tbody className="divide-y divide-gray-50">
+                                                  {editingProduct.variants
+                                                      .filter(v => 
+                                                          (matrixFilterColor === 'all' || v.color === matrixFilterColor) && 
+                                                          (matrixFilterStorage === 'all' || v.storage === matrixFilterStorage)
+                                                      )
+                                                      .map((variant) => {
+                                                      const isPriceDiff = variant.price !== editingProduct.price;
+                                                      return (
+                                                      <tr key={variant.id} className="hover:bg-blue-50/30 transition-colors group">
+                                                          <td className="p-4 pl-6">
+                                                              <div className="flex items-center gap-3">
+                                                                  <div className="w-8 h-8 rounded-lg border border-gray-200 shadow-sm flex-shrink-0 relative overflow-hidden bg-white">
+                                                                      <div className="absolute inset-0" style={{backgroundColor: variant.color}}></div>
+                                                                      <div className="absolute inset-0 bg-gradient-to-br from-white/40 to-transparent"></div>
+                                                                  </div>
+                                                                  <div>
+                                                                      <span className="font-bold text-gray-900 text-sm block">{variant.color}</span>
+                                                                      <span className="text-xs font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">{variant.storage}</span>
+                                                                  </div>
+                                                              </div>
+                                                          </td>
+                                                          <td className="p-4">
+                                                              <input 
+                                                                  type="text" 
+                                                                  value={variant.sku} 
+                                                                  onChange={(e) => updateVariant(variant.id, 'sku', e.target.value)}
+                                                                  className="w-full bg-transparent border-b border-dashed border-gray-300 focus:border-primary outline-none text-xs font-mono text-gray-500 py-1 transition-colors hover:border-gray-400"
+                                                              />
+                                                          </td>
+                                                          <td className="p-4">
+                                                              <div className="relative">
+                                                                  <input 
+                                                                      type="number" 
+                                                                      value={variant.price} 
+                                                                      onChange={(e) => updateVariant(variant.id, 'price', parseFloat(e.target.value))}
+                                                                      className={`w-full p-2 border rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-primary/20 transition-all ${isPriceDiff ? 'bg-yellow-50 border-yellow-200 text-yellow-900' : 'bg-white border-gray-200 text-gray-900'}`}
+                                                                  />
+                                                                  {isPriceDiff && (
+                                                                      <div className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-yellow-600 pointer-events-none">
+                                                                          {variant.price > (editingProduct.price || 0) ? '+' : ''}{variant.price - (editingProduct.price || 0)}
+                                                                      </div>
+                                                                  )}
+                                                              </div>
+                                                          </td>
+                                                          <td className="p-4">
+                                                              <input 
+                                                                  type="number" 
+                                                                  value={variant.stock} 
+                                                                  onChange={(e) => updateVariant(variant.id, 'stock', parseInt(e.target.value))}
+                                                                  className={`w-full p-2 border rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-primary/20 transition-all ${variant.stock < 5 ? 'bg-red-50 border-red-200 text-red-600' : 'bg-white border-gray-200 text-green-700'}`}
+                                                              />
+                                                          </td>
+                                                          <td className="p-4 text-center">
+                                                              <button onClick={() => setEditingProduct(prev => ({...prev, variants: prev.variants?.filter(v => v.id !== variant.id)}))} className="text-gray-300 hover:text-red-500 transition-colors p-1.5 hover:bg-red-50 rounded-lg">
+                                                                  <X size={16}/>
+                                                              </button>
+                                                          </td>
+                                                      </tr>
+                                                  )})}
+                                              </tbody>
+                                          </table>
+                                      </div>
+                                  </div>
+                              )}
+                          </div>
+                      )}
+
+                      {/* --- MEDIA TAB --- */}
+                      {activeTab === 'media' && (
+                         <div className="space-y-6">
+                            <div className="flex gap-4 border-b border-gray-200 pb-1">
+                                <button type="button" onClick={() => setImageTab('fetch')} className={`pb-2 text-sm font-bold transition-colors ${imageTab === 'fetch' ? 'text-primary border-b-2 border-primary' : 'text-gray-400'}`}>Fetch from Web</button>
+                                <button type="button" onClick={() => setImageTab('url')} className={`pb-2 text-sm font-bold transition-colors ${imageTab === 'url' ? 'text-primary border-b-2 border-primary' : 'text-gray-400'}`}>Add from URL</button>
+                                <button type="button" onClick={() => setImageTab('upload')} className={`pb-2 text-sm font-bold transition-colors ${imageTab === 'upload' ? 'text-primary border-b-2 border-primary' : 'text-gray-400'}`}>Upload</button>
+                            </div>
+
+                            {imageTab === 'fetch' && (
+                                <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 text-center">
+                                    <Globe size={32} className="mx-auto text-blue-500 mb-3"/>
+                                    <h4 className="font-bold text-blue-900 mb-2">Fetch Official Images</h4>
+                                    <p className="text-sm text-blue-600 mb-4">We'll search for official press renders of <strong>{editingProduct.name || 'this product'}</strong>.</p>
+                                    <button 
+                                        type="button" 
+                                        onClick={handleFetchImages}
+                                        disabled={aiLoading || !editingProduct.name}
+                                        className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 mx-auto disabled:opacity-50"
+                                    >
+                                        {aiLoading ? <RefreshCw size={16} className="animate-spin"/> : <Search size={16}/>} Find Images
+                                    </button>
+                                </div>
+                            )}
+
+                            {imageTab === 'url' && (
                                 <div className="flex gap-2">
                                     <input 
                                         type="text" 
-                                        required 
-                                        value={editingProduct.name} 
-                                        onChange={e => setEditingProduct({...editingProduct, name: e.target.value})} 
-                                        className="w-full p-3 bg-white border border-gray-200 rounded-xl focus:border-primary outline-none" 
-                                        placeholder="e.g. iPhone 15 Pro Max"
+                                        value={imageUrlInput}
+                                        onChange={e => setImageUrlInput(e.target.value)}
+                                        placeholder="https://example.com/image.jpg"
+                                        className="flex-1 p-3 bg-white border border-gray-200 rounded-xl focus:border-primary outline-none"
                                     />
-                                    <button 
-                                        type="button" 
-                                        onClick={handleFetchSpecs}
-                                        disabled={aiLoading}
-                                        className="px-4 py-2 bg-gradient-to-r from-purple-500 to-indigo-600 text-white font-bold rounded-xl whitespace-nowrap flex items-center gap-2 shadow-lg hover:shadow-xl transition-all"
-                                    >
-                                        {aiLoading ? <RefreshCw size={16} className="animate-spin"/> : <Wand2 size={16}/>} Auto-Fetch Specs
+                                    <button type="button" onClick={handleAddImageUrl} className="px-4 py-2 bg-gray-900 text-white rounded-xl font-bold hover:bg-black transition-colors">
+                                        Add
                                     </button>
                                 </div>
-                                <p className="text-xs text-gray-400 mt-1">Enter a model name and click Auto-Fetch to populate specs, images, and SEO from the web (via AI).</p>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-bold text-gray-700 mb-2">Brand</label>
-                                <select value={editingProduct.brand} onChange={e => setEditingProduct({...editingProduct, brand: e.target.value})} className="w-full p-3 bg-white border border-gray-200 rounded-xl focus:border-primary outline-none">
-                                    {['Apple', 'Samsung', 'Google', 'Sony', 'OnePlus', 'Xiaomi', 'Huawei'].map(b => <option key={b} value={b}>{b}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-bold text-gray-700 mb-2">Category</label>
-                                <select value={editingProduct.category} onChange={e => setEditingProduct({...editingProduct, category: e.target.value as any})} className="w-full p-3 bg-white border border-gray-200 rounded-xl focus:border-primary outline-none">
-                                    {['Smartphones', 'Tablets', 'Wearables', 'Audio', 'Accessories'].map(c => <option key={c} value={c}>{c}</option>)}
-                                </select>
-                            </div>
-                            <div className="col-span-2">
-                                <div className="flex justify-between mb-2">
-                                    <label className="text-sm font-bold text-gray-700">Description</label>
-                                    <button 
-                                       type="button" 
-                                       onClick={() => handleAiGenerate('description')}
-                                       disabled={aiLoading}
-                                       className="text-xs font-bold text-purple-600 flex items-center gap-1 hover:bg-purple-50 px-2 py-1 rounded transition-colors"
-                                    >
-                                       {aiLoading ? <RefreshCw size={12} className="animate-spin"/> : <Sparkles size={12}/>} AI Magic Write
-                                    </button>
-                                </div>
-                                <textarea value={editingProduct.description} onChange={e => setEditingProduct({...editingProduct, description: e.target.value})} className="w-full p-3 bg-white border border-gray-200 rounded-xl focus:border-primary outline-none h-32 resize-none" placeholder="Enter product description..."></textarea>
-                            </div>
-                         </div>
-                      )}
+                            )}
 
-                      {activeTab === 'pricing' && (
-                         <div className="grid grid-cols-2 gap-6">
-                            <div className="bg-white p-5 rounded-2xl border border-gray-200">
-                                <h4 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><DollarSign size={16}/> Price Configuration</h4>
-                                <div className="space-y-4">
-                                   <div>
-                                       <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Selling Price (KWD)</label>
-                                       <input type="number" required value={editingProduct.price} onChange={e => setEditingProduct({...editingProduct, price: parseFloat(e.target.value)})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary outline-none" />
-                                   </div>
-                                   <div>
-                                       <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Cost Price (KWD)</label>
-                                       <input type="number" value={editingProduct.costPrice || ''} onChange={e => setEditingProduct({...editingProduct, costPrice: parseFloat(e.target.value)})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary outline-none" />
-                                   </div>
+                            {imageTab === 'upload' && (
+                                <div className="border-3 border-dashed border-gray-200 rounded-2xl p-10 text-center hover:bg-gray-50 cursor-pointer transition-colors bg-white" onClick={() => fileInputRef.current?.click()}>
+                                    <Upload className="mx-auto text-blue-500 mb-3 bg-blue-50 p-2 rounded-full box-content" size={32}/>
+                                    <p className="font-bold text-gray-700 text-lg">Click to upload images</p>
+                                    <input type="file" multiple ref={fileInputRef} className="hidden" onChange={handleImageSelect} />
                                 </div>
-                            </div>
-                            
-                            <div className="bg-white p-5 rounded-2xl border border-gray-200">
-                                <h4 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><Layers size={16}/> Inventory</h4>
-                                <div className="space-y-4">
-                                   <div>
-                                       <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Stock Quantity</label>
-                                       <input type="number" required value={editingProduct.stock} onChange={e => setEditingProduct({...editingProduct, stock: parseInt(e.target.value)})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary outline-none" />
-                                   </div>
-                                   <div>
-                                       <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Reorder Point</label>
-                                       <input type="number" value={editingProduct.reorderPoint || 5} onChange={e => setEditingProduct({...editingProduct, reorderPoint: parseInt(e.target.value)})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary outline-none" />
-                                   </div>
-                                </div>
-                            </div>
-                         </div>
-                      )}
+                            )}
 
-                      {activeTab === 'media' && (
-                         <div className="space-y-6">
-                            <div className="flex justify-between items-center">
-                                <h4 className="font-bold text-gray-900">Product Images</h4>
-                                <button 
-                                    type="button" 
-                                    onClick={() => handleAiGenerate('image')}
-                                    disabled={aiLoading}
-                                    className="px-4 py-2 bg-gradient-to-r from-pink-500 to-rose-500 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center gap-2 text-sm"
-                                >
-                                    {aiLoading ? <RefreshCw size={14} className="animate-spin"/> : <Wand2 size={14}/>} Generate AI Image
-                                </button>
-                            </div>
-                            
-                            <div className="border-3 border-dashed border-gray-200 rounded-2xl p-10 text-center hover:bg-gray-50 cursor-pointer transition-colors bg-white" onClick={() => fileInputRef.current?.click()}>
-                               <Upload className="mx-auto text-blue-500 mb-3 bg-blue-50 p-2 rounded-full box-content" size={32}/>
-                               <p className="font-bold text-gray-700 text-lg">Click to upload images</p>
-                               <input type="file" multiple ref={fileInputRef} className="hidden" onChange={handleImageSelect} />
-                            </div>
                             <div className="grid grid-cols-5 gap-4">
                                {editingProduct.images?.map((img, i) => (
                                   <div key={i} className="aspect-square bg-white rounded-xl overflow-hidden relative group border border-gray-200 shadow-sm">
@@ -448,67 +983,61 @@ export const ProductManager: React.FC = () => {
                       )}
 
                       {activeTab === 'specs' && (
-                         <div className="space-y-4">
+                         <div className="space-y-6">
                             <div className="bg-purple-50 p-4 rounded-xl border border-purple-100 flex items-center justify-between">
                                <div>
-                                  <h4 className="font-bold text-purple-800">Detailed Specifications</h4>
-                                  <p className="text-xs text-purple-600">The AI Auto-Fetch retrieves comprehensive specs. Add custom fields if needed.</p>
+                                  <h4 className="font-bold text-purple-800">Full Specifications</h4>
+                                  <p className="text-xs text-purple-600">Deep technical specs (GSM Arena style). Use "Auto-Fill" for best results.</p>
                                </div>
-                               <button type="button" onClick={handleFetchSpecs} className="px-4 py-2 bg-white rounded-lg text-xs font-bold text-purple-700 shadow-sm hover:shadow">
-                                  Refetch Specs
+                               <button type="button" onClick={() => handleFetchSpecs()} className="px-4 py-2 bg-white rounded-lg text-xs font-bold text-purple-700 shadow-sm hover:shadow flex items-center gap-2">
+                                  <Wand2 size={14}/> Auto-Fill Specs
                                </button>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                               {/* Render Dynamic Specs */}
-                               {Object.entries(editingProduct.specs || {}).map(([key, val], idx) => (
-                                  <div key={idx} className="relative group">
-                                     <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-                                         <input 
-                                            type="text" 
-                                            value={key} 
-                                            onChange={(e) => updateSpecKey(key, e.target.value)}
-                                            className="bg-transparent border-none p-0 focus:ring-0 text-gray-500 font-bold uppercase text-xs w-full"
-                                         />
-                                     </label>
-                                     <div className="flex gap-2">
-                                         <input 
-                                            type="text" 
-                                            value={val || ''} 
-                                            onChange={(e) => updateSpecValue(key, e.target.value)} 
-                                            className="w-full p-3 bg-white border border-gray-200 rounded-xl focus:border-primary outline-none"
-                                         />
-                                         <button type="button" onClick={() => removeSpecField(key)} className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity">
-                                             <MinusCircle size={18}/>
-                                         </button>
-                                     </div>
-                                  </div>
-                               ))}
+                            {/* Render Deep Grouped Specs */}
+                            <div className="space-y-6">
+                                {Object.entries(editingProduct.specs || {}).map(([key, val]) => {
+                                    if (typeof val === 'object' && val !== null) {
+                                        return renderSpecGroup(key, val);
+                                    }
+                                    return null;
+                                })}
+                                
+                                <button type="button" className="w-full py-3 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 font-bold hover:border-primary hover:text-primary transition-colors" onClick={() => {
+                                    setEditingProduct(prev => ({
+                                        ...prev,
+                                        specs: { ...prev.specs, "New Section": { "Feature": "" } }
+                                    }));
+                                }}>
+                                    + Add Specification Section
+                                </button>
                             </div>
-                            <button type="button" onClick={addSpecField} className="mt-4 flex items-center gap-2 text-primary font-bold text-sm hover:underline">
-                                <PlusCircle size={16}/> Add Custom Specification
-                            </button>
                          </div>
                       )}
 
                       {activeTab === 'seo' && (
                          <div className="space-y-4">
-                             <div className="flex justify-end">
+                             <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 flex items-center justify-between">
+                                 <div>
+                                     <h4 className="font-bold text-indigo-900 flex items-center gap-2"><BrainCircuit size={16}/> AI SEO Optimizer</h4>
+                                     <p className="text-xs text-indigo-700">Auto-generate title, description and keywords to boost sales.</p>
+                                 </div>
                                  <button 
-                                    type="button" 
-                                    onClick={() => handleAiGenerate('seo')}
-                                    disabled={aiLoading}
-                                    className="text-xs font-bold text-purple-600 flex items-center gap-1 hover:bg-purple-50 px-3 py-2 rounded-lg transition-colors border border-purple-100"
+                                     type="button" 
+                                     onClick={handleGenerateSEO}
+                                     disabled={aiLoading}
+                                     className="px-4 py-2 bg-white text-indigo-700 font-bold rounded-lg text-xs shadow-sm hover:shadow hover:bg-indigo-50 border border-indigo-200 disabled:opacity-50"
                                  >
-                                    {aiLoading ? <RefreshCw size={12} className="animate-spin"/> : <Sparkles size={12}/>} Generate SEO Data
+                                     {aiLoading ? 'Generating...' : 'Generate with AI'}
                                  </button>
                              </div>
+
                              <div>
-                                 <label className="block text-sm font-bold text-gray-700 mb-2">Meta Title (Max 60 chars)</label>
+                                 <label className="block text-sm font-bold text-gray-700 mb-2">Meta Title</label>
                                  <input type="text" value={editingProduct.seo?.metaTitle || ''} onChange={e => setEditingProduct({...editingProduct, seo: {...editingProduct.seo, metaTitle: e.target.value} as any})} className="w-full p-3 bg-white border border-gray-200 rounded-xl focus:border-primary outline-none" placeholder="SEO Title"/>
                              </div>
                              <div>
-                                 <label className="block text-sm font-bold text-gray-700 mb-2">Meta Description (Max 160 chars)</label>
+                                 <label className="block text-sm font-bold text-gray-700 mb-2">Meta Description</label>
                                  <textarea value={editingProduct.seo?.metaDescription || ''} onChange={e => setEditingProduct({...editingProduct, seo: {...editingProduct.seo, metaDescription: e.target.value} as any})} className="w-full p-3 bg-white border border-gray-200 rounded-xl h-24 focus:border-primary outline-none" placeholder="SEO Description"></textarea>
                              </div>
                              <div>
@@ -540,52 +1069,30 @@ export const ProductManager: React.FC = () => {
                       )}
                    </form>
                 </div>
-                <div className="p-4 border-t border-gray-100 bg-white flex justify-end gap-3 z-10">
-                   <button type="button" onClick={() => setShowModal(false)} className="px-6 py-3 bg-gray-100 rounded-xl text-gray-700 font-bold hover:bg-gray-200 transition-colors">Cancel</button>
-                   <button type="submit" form="productForm" className="px-8 py-3 bg-primary text-white rounded-xl font-bold hover:bg-slate-800 transition-colors shadow-lg shadow-primary/20">Save Product</button>
-                </div>
-             </div>
-          </div>
-       )}
 
-       {/* Bulk Import Modal */}
-       {showBulkModal && (
-          <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden p-8">
-                <div className="flex justify-between items-center mb-6">
-                   <h3 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><Database size={24} className="text-purple-600"/> AI Bulk Product Import</h3>
-                   <button onClick={() => setShowBulkModal(false)} className="p-2 hover:bg-gray-100 rounded-full"><X size={20}/></button>
-                </div>
-                
-                <div className="bg-purple-50 p-4 rounded-xl border border-purple-100 mb-6">
-                    <p className="text-sm text-purple-800 font-medium flex items-center gap-2">
-                        <Sparkles size={16}/> Automated Feature Extraction
-                    </p>
-                    <p className="text-xs text-purple-600 mt-1">
-                        Our AI will process each line to automatically:
-                        1. Fetch exhaustive specifications (Screen, CPU, Cam, etc.)
-                        2. Generate SEO Meta Title, Description & Keywords
-                        3. Create a high-quality product image
-                    </p>
-                </div>
-
-                <textarea 
-                   className="w-full h-48 p-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-purple-500 font-mono text-sm resize-none mb-6"
-                   placeholder="Paste model names (one per line):&#10;Samsung Galaxy S24 Ultra&#10;iPhone 15 Pro Max&#10;Google Pixel 8 Pro"
-                   value={bulkInput}
-                   onChange={e => setBulkInput(e.target.value)}
-                ></textarea>
-
-                <div className="flex justify-end gap-3">
-                   <button onClick={() => setShowBulkModal(false)} className="px-6 py-3 text-gray-600 font-bold hover:bg-gray-50 rounded-xl">Cancel</button>
-                   <button 
-                      onClick={handleBulkImport}
-                      disabled={bulkProcessing || !bulkInput.trim()}
-                      className="px-8 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold rounded-xl shadow-lg hover:shadow-xl transition-all disabled:opacity-50 flex items-center gap-2"
-                   >
-                      {bulkProcessing ? <RefreshCw size={18} className="animate-spin"/> : <Download size={18}/>} 
-                      {bulkProcessing ? 'AI Processing...' : 'Start Auto-Import'}
-                   </button>
+                {/* Bottom Navigation */}
+                <div className="p-4 border-t border-gray-100 bg-white flex justify-between z-10">
+                    <button 
+                        type="button" 
+                        onClick={handleBack}
+                        disabled={activeTab === 'basic'}
+                        className="px-6 py-3 bg-gray-100 rounded-xl text-gray-600 font-bold hover:bg-gray-200 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <ChevronLeft size={18}/> Back
+                    </button>
+                    {activeTab === 'seo' ? (
+                        <button type="submit" form="productForm" className="px-8 py-3 bg-primary text-white rounded-xl font-bold hover:bg-slate-800 transition-colors shadow-lg shadow-primary/20 flex items-center gap-2">
+                            <CheckCircle size={18}/> Save Product
+                        </button>
+                    ) : (
+                        <button 
+                            type="button" 
+                            onClick={handleNext}
+                            className="px-8 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-black transition-colors flex items-center gap-2"
+                        >
+                            Next Step <ChevronRight size={18}/>
+                        </button>
+                    )}
                 </div>
              </div>
           </div>

@@ -18,11 +18,20 @@ export interface Address {
   isDefault?: boolean;
 }
 
+export interface ProductVariant {
+  id: string;
+  color: string;
+  storage: string;
+  price: number;
+  stock: number;
+  sku?: string;
+}
+
 export interface Product {
   id: string;
   name: string;
   brand: string;
-  price: number;
+  price: number; // Base price (displayed in lists)
   originalPrice?: number;
   costPrice?: number;
   monthlyPrice?: number;
@@ -30,23 +39,11 @@ export interface Product {
   reviewsCount?: number;
   category: 'Smartphones' | 'Audio' | 'Wearables' | 'Accessories' | 'Tablets';
   colors: string[];
+  storageOptions?: string[];
+  variants?: ProductVariant[]; // Detailed combinations
+  // Allow nested objects for grouped specs
   specs: {
-    screen?: string;
-    processor?: string;
-    ram?: string;
-    storage?: string;
-    camera?: string;
-    battery?: string;
-    os?: string;
-    weight?: string;
-    dimensions?: string;
-    sim?: string;
-    connectivity?: string;
-    sensors?: string;
-    chipset?: string;
-    video?: string;
-    charging?: string;
-    [key: string]: string | undefined;
+    [key: string]: any;
   };
   description: string;
   imageSeed: number;
@@ -54,7 +51,7 @@ export interface Product {
   images?: string[];
   tags: string[];
   express?: boolean;
-  stock: number;
+  stock: number; // Total stock (sum of variants or simple number)
   reorderPoint?: number;
   supplier?: string;
   sku?: string;
@@ -68,6 +65,8 @@ export interface Product {
 
 export interface CartItem extends Product {
   quantity: number;
+  selectedColor?: string;
+  selectedStorage?: string;
 }
 
 export interface ChatMessage {

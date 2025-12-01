@@ -179,7 +179,7 @@ interface ShopContextType {
   
   // Actions
   setSearchQuery: (query: string) => void;
-  addToCart: (product: Product) => void;
+  addToCart: (product: Product & { selectedColor?: string; selectedStorage?: string }) => void;
   removeFromCart: (productId: string) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   toggleCart: () => void;
@@ -356,7 +356,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // Cart Logic with Inventory Check
-  const addToCart = (product: Product) => {
+  const addToCart = (product: Product & { selectedColor?: string; selectedStorage?: string }) => {
     setCart(prev => {
       const existing = prev.find(item => item.id === product.id);
       const currentStock = products.find(p => p.id === product.id)?.stock || 0;

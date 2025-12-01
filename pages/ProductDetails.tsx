@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useShop } from '../context/ShopContext';
@@ -15,7 +16,12 @@ export const ProductDetails: React.FC = () => {
   const [aiReview, setAiReview] = useState<string>('');
   const [loadingReview, setLoadingReview] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'specs' | 'reviews'>('overview');
-  const [selectedColor, setSelectedColor] = useState<string>(product?.colors?.[0] || '');
+  
+  const [selectedColor, setSelectedColor] = useState<string>('');
+  const [selectedStorage, setSelectedStorage] = useState<string>('');
+  const [currentPrice, setCurrentPrice] = useState<number>(0);
+  const [currentStock, setCurrentStock] = useState<number>(0);
+
   const [quantity, setQuantity] = useState(1);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
@@ -24,10 +30,48 @@ export const ProductDetails: React.FC = () => {
     setAiReview('');
     setQuantity(1);
     if (product) {
-      if (product.colors?.length) setSelectedColor(product.colors[0]);
+      const initialColor = product.colors?.[0] || '';
+      const initialStorage = product.storageOptions?.[0] || '';
+      
+      setSelectedColor(initialColor);
+      setSelectedStorage(initialStorage);
+      
+      updateVariantInfo(initialColor, initialStorage);
       addToRecentlyViewed(product);
     }
   }, [id, product]);
+
+  const updateVariantInfo = (color: string, storage: string) => {
+      if(!product) return;
+
+      // Find specific variant
+      if(product.variants && product.variants.length > 0) {
+          const variant = product.variants.find(v => v.color === color && v.storage === storage);
+          if (variant) {
+              setCurrentPrice(variant.price);
+              setCurrentStock(variant.stock);
+          } else {
+              // Fallback if combination doesn't exist (e.g. Blue 512GB might not exist)
+              setCurrentPrice(product.price);
+              setCurrentStock(0); // Treat as OOS
+          }
+      } else {
+          // No variants defined, use base
+          setCurrentPrice(product.price);
+          setCurrentStock(product.stock);
+      }
+  };
+
+  // Handle Selection Changes
+  const handleColorChange = (color: string) => {
+      setSelectedColor(color);
+      updateVariantInfo(color, selectedStorage);
+  };
+
+  const handleStorageChange = (storage: string) => {
+      setSelectedStorage(storage);
+      updateVariantInfo(selectedColor, storage);
+  };
 
   const handleGenerateReview = async () => {
     if (!product) return;
@@ -39,23 +83,36 @@ export const ProductDetails: React.FC = () => {
 
   const handleAddToCart = () => {
       if(!product) return;
-      if (quantity > product.stock) {
-         showToast(`Cannot add ${quantity} items. Only ${product.stock} available.`, 'error');
+      if (quantity > currentStock) {
+         showToast(`Cannot add ${quantity} items. Only ${currentStock} available for this selection.`, 'error');
          return;
       }
       for(let i=0; i<quantity; i++) {
-        addToCart(product);
+        // We pass the base product, context handles structure. 
+        addToCart({
+            ...product, 
+            price: currentPrice, // Use dynamic price
+            selectedColor, 
+            selectedStorage
+        });
       }
   };
 
   const handleBuyNow = () => {
     if(!product) return;
-    if (quantity > product.stock) {
-       showToast(`Cannot buy ${quantity} items. Only ${product.stock} available.`, 'error');
+    if (quantity > currentStock) {
+       showToast(`Cannot buy ${quantity} items. Only ${currentStock} available.`, 'error');
        return;
     }
     handleAddToCart();
     navigate('/checkout');
+  };
+
+  // Helper to check if a specific combo exists and has stock
+  const isVariantAvailable = (color: string, storage: string) => {
+      if (!product?.variants || product.variants.length === 0) return true; // Base stock logic
+      const variant = product.variants.find(v => v.color === color && v.storage === storage);
+      return variant && variant.stock > 0;
   };
 
   if (!product) {
@@ -71,8 +128,8 @@ export const ProductDetails: React.FC = () => {
 
   const isWishlisted = isInWishlist(product.id);
   const isCompared = isInCompare(product.id);
-  const discount = product.originalPrice ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100) : 0;
-  const inStock = product.stock > 0;
+  const discount = product.originalPrice ? Math.round(((product.originalPrice - currentPrice) / product.originalPrice) * 100) : 0;
+  const inStock = currentStock > 0;
   const relatedProducts = products.filter(p => p.category === product.category && p.id !== product.id).slice(0, 4);
 
   // Sticky Header Logic
@@ -83,6 +140,39 @@ export const ProductDetails: React.FC = () => {
      return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // Helper to render specs recursively or in groups
+  const renderSpecs = () => {
+      return Object.entries(product.specs).map(([key, val], i) => {
+          if (typeof val === 'object' && val !== null) {
+              return (
+                  <div key={key} className="mb-6 border border-gray-200 rounded-xl overflow-hidden">
+                      <div className="bg-gray-50 px-5 py-3 border-b border-gray-200 font-bold text-gray-800 uppercase tracking-wider text-sm">
+                          {key}
+                      </div>
+                      <div className="divide-y divide-gray-100">
+                          {Object.entries(val).map(([subKey, subVal]: any) => (
+                              <div key={subKey} className="flex p-4 hover:bg-gray-50/50 transition-colors">
+                                  <div className="w-1/3 text-xs font-bold text-gray-500 uppercase">{subKey}</div>
+                                  <div className="w-2/3 text-sm font-medium text-gray-900">{subVal}</div>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+              );
+          } else {
+              // Flat specs fallback
+              return (
+                  <div key={key} className="flex p-5 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-0">
+                      <div className="w-1/3 text-sm font-bold text-gray-500 capitalize flex items-center gap-2">
+                          {key.replace(/([A-Z])/g, ' $1').trim()}
+                      </div>
+                      <div className="w-2/3 text-sm font-semibold text-gray-900">{val as React.ReactNode}</div>
+                  </div>
+              );
+          }
+      });
+  };
+
   return (
     <div className="min-h-screen bg-gray-50/50 pb-24 md:pb-20 font-sans">
       
@@ -91,12 +181,12 @@ export const ProductDetails: React.FC = () => {
          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex justify-between items-center">
             <div className="flex items-center gap-4">
                <div className="w-12 h-12 rounded-lg border border-gray-100 p-1 bg-white">
-                 <img src={`https://picsum.photos/seed/${product.imageSeed}/100/100`} className="w-full h-full object-contain" alt={product.name}/>
+                 <img src={product.images?.[0] || `https://picsum.photos/seed/${product.imageSeed}/100/100`} className="w-full h-full object-contain" alt={product.name}/>
                </div>
                <div>
                   <h3 className="font-bold text-gray-900 text-sm line-clamp-1">{product.name}</h3>
                   <div className="flex items-center gap-2">
-                     <span className="text-sm font-black text-primary">{product.price} KWD</span>
+                     <span className="text-sm font-black text-primary">{currentPrice} KWD</span>
                      <span className="flex items-center gap-1 text-xs font-bold text-gray-500"><Star size={10} className="fill-secondary text-secondary"/> {product.rating}</span>
                   </div>
                </div>
@@ -138,7 +228,7 @@ export const ProductDetails: React.FC = () => {
                           <Maximize2 size={20}/>
                        </button>
                        <img 
-                         src={`https://picsum.photos/seed/${product.imageSeed + selectedImageIndex}/800/800`} 
+                         src={product.images?.[selectedImageIndex] || `https://picsum.photos/seed/${product.imageSeed + selectedImageIndex}/800/800`} 
                          alt={product.name}
                          className="w-full h-full object-contain hover:scale-105 transition-transform duration-700 ease-out" 
                        />
@@ -147,20 +237,29 @@ export const ProductDetails: React.FC = () => {
                  
                  {/* Thumbnails */}
                  <div className="grid grid-cols-5 gap-3">
-                    {[0, 1, 2, 3].map((i) => (
-                      <div 
-                        key={i} 
-                        onClick={() => setSelectedImageIndex(i)}
-                        className={`aspect-square rounded-xl p-2 cursor-pointer transition-all bg-white border flex items-center justify-center relative ${selectedImageIndex === i ? 'border-primary ring-2 ring-primary/20 shadow-md' : 'border-gray-200 hover:border-gray-300'}`}
-                      >
-                         <img src={`https://picsum.photos/seed/${product.imageSeed + i}/200/200`} className="w-full h-full object-contain" />
-                         {selectedImageIndex === i && <div className="absolute inset-0 bg-primary/5 rounded-xl"></div>}
-                      </div>
-                    ))}
-                    <div className="aspect-square rounded-xl bg-gray-50 border border-gray-200 flex flex-col items-center justify-center text-gray-400 cursor-pointer hover:bg-gray-100 hover:text-primary transition-colors">
-                        <PlayCircle size={24}/>
-                        <span className="text-[10px] font-bold mt-1">Video</span>
-                    </div>
+                    {product.images && product.images.length > 0 ? (
+                        product.images.map((img, i) => (
+                            <div 
+                                key={i} 
+                                onClick={() => setSelectedImageIndex(i)}
+                                className={`aspect-square rounded-xl p-2 cursor-pointer transition-all bg-white border flex items-center justify-center relative ${selectedImageIndex === i ? 'border-primary ring-2 ring-primary/20 shadow-md' : 'border-gray-200 hover:border-gray-300'}`}
+                            >
+                                <img src={img} className="w-full h-full object-contain" />
+                                {selectedImageIndex === i && <div className="absolute inset-0 bg-primary/5 rounded-xl"></div>}
+                            </div>
+                        ))
+                    ) : (
+                        [0, 1, 2, 3].map((i) => (
+                        <div 
+                            key={i} 
+                            onClick={() => setSelectedImageIndex(i)}
+                            className={`aspect-square rounded-xl p-2 cursor-pointer transition-all bg-white border flex items-center justify-center relative ${selectedImageIndex === i ? 'border-primary ring-2 ring-primary/20 shadow-md' : 'border-gray-200 hover:border-gray-300'}`}
+                        >
+                            <img src={`https://picsum.photos/seed/${product.imageSeed + i}/200/200`} className="w-full h-full object-contain" />
+                            {selectedImageIndex === i && <div className="absolute inset-0 bg-primary/5 rounded-xl"></div>}
+                        </div>
+                        ))
+                    )}
                  </div>
               </div>
             </div>
@@ -190,57 +289,74 @@ export const ProductDetails: React.FC = () => {
                {/* Price for Mobile (Usually visible here, but main price in sidebar for desktop) */}
                <div className="lg:hidden">
                   <div className="flex items-baseline gap-3">
-                     <span className="text-4xl font-black text-primary">{product.price} <span className="text-lg">KWD</span></span>
+                     <span className="text-4xl font-black text-primary">{currentPrice} <span className="text-lg">KWD</span></span>
                      {product.originalPrice && <span className="text-lg text-gray-400 line-through font-medium">{product.originalPrice} KWD</span>}
                   </div>
                </div>
 
                {/* Configuration */}
                <div className="space-y-6">
-                  {product.colors && (
+                  {product.colors && product.colors.length > 0 && (
                      <div>
                         <span className="text-sm font-bold text-gray-900 mb-3 block">Select Color: <span className="text-primary">{selectedColor}</span></span>
-                        <div className="flex gap-3">
-                           {product.colors.map((color) => (
-                              <button
-                                 key={color}
-                                 onClick={() => setSelectedColor(color)}
-                                 className={`w-12 h-12 rounded-full shadow-sm focus:outline-none transition-all flex items-center justify-center border-2 relative ${selectedColor === color ? 'border-primary ring-2 ring-primary/20 scale-110' : 'border-gray-200 hover:border-gray-300'}`}
-                                 style={{ backgroundColor: color }}
-                                 title={color}
-                              >
-                                 {selectedColor === color && <Check size={18} className="text-white drop-shadow-md" />}
-                              </button>
-                           ))}
+                        <div className="flex gap-3 flex-wrap">
+                           {product.colors.map((color) => {
+                              const available = isVariantAvailable(color, selectedStorage);
+                              return (
+                                <button
+                                    key={color}
+                                    onClick={() => handleColorChange(color)}
+                                    className={`w-12 h-12 rounded-full shadow-sm focus:outline-none transition-all flex items-center justify-center border-2 relative 
+                                    ${selectedColor === color ? 'border-primary ring-2 ring-primary/20 scale-110' : 'border-gray-200 hover:border-gray-300'}
+                                    ${!available ? 'opacity-50 grayscale cursor-not-allowed' : ''}
+                                    `}
+                                    style={{ backgroundColor: color }}
+                                    title={available ? color : `${color} (Out of Stock)`}
+                                >
+                                    {selectedColor === color && <Check size={18} className="text-white drop-shadow-md mix-blend-difference" />}
+                                    {!available && selectedColor !== color && <div className="absolute inset-0 flex items-center justify-center"><div className="w-full h-0.5 bg-gray-400 rotate-45"></div></div>}
+                                </button>
+                              );
+                           })}
                         </div>
                      </div>
                   )}
 
-                  {/* Storage Options (Mock) */}
-                  <div>
-                     <span className="text-sm font-bold text-gray-900 mb-3 block">Storage</span>
-                     <div className="grid grid-cols-3 gap-3">
-                        {['128GB', '256GB', '512GB'].map((storage, i) => (
-                           <button 
-                             key={storage}
-                             className={`py-3 px-2 rounded-xl text-sm font-bold border transition-all ${i === 1 ? 'border-primary bg-blue-50 text-primary ring-1 ring-primary/30' : 'border-gray-200 text-gray-600 hover:border-gray-300 bg-white'}`}
-                           >
-                              {storage}
-                              <span className="block text-[10px] font-normal opacity-70 mt-0.5">{i === 1 ? '+0 KWD' : i === 0 ? '-20 KWD' : '+40 KWD'}</span>
-                           </button>
-                        ))}
-                     </div>
-                  </div>
+                  {/* Storage Options */}
+                  {product.storageOptions && product.storageOptions.length > 0 && (
+                      <div>
+                         <span className="text-sm font-bold text-gray-900 mb-3 block">Storage</span>
+                         <div className="grid grid-cols-3 gap-3">
+                            {product.storageOptions.map((storage, i) => {
+                               const available = isVariantAvailable(selectedColor, storage);
+                               return (
+                                <button 
+                                    key={storage}
+                                    onClick={() => handleStorageChange(storage)}
+                                    className={`py-3 px-2 rounded-xl text-sm font-bold border transition-all relative overflow-hidden
+                                    ${selectedStorage === storage ? 'border-primary bg-blue-50 text-primary ring-1 ring-primary/30' : 'border-gray-200 text-gray-600 hover:border-gray-300 bg-white'}
+                                    ${!available ? 'opacity-50 cursor-not-allowed bg-gray-50' : ''}
+                                    `}
+                                >
+                                    {storage}
+                                    {!available && <div className="absolute inset-0 flex items-center justify-center bg-gray-100/50"><div className="w-full h-0.5 bg-gray-300 rotate-12"></div></div>}
+                                </button>
+                               );
+                            })}
+                         </div>
+                      </div>
+                  )}
                </div>
 
                {/* Highlights */}
                <div className="bg-gray-50 rounded-2xl p-5 border border-gray-100">
                   <h4 className="font-bold text-gray-900 text-sm mb-3 uppercase tracking-wider">Product Highlights</h4>
                   <ul className="space-y-2">
-                     {Object.entries(product.specs).slice(0, 4).map(([key, val]) => (
+                     {/* Simplified highlights extraction */}
+                     {Object.entries(product.specs).filter(([_, val]) => typeof val === 'string').slice(0, 4).map(([key, val]) => (
                         <li key={key} className="flex items-start gap-2 text-sm text-gray-700">
                            <CheckCircle size={16} className="text-green-500 mt-0.5 flex-shrink-0"/>
-                           <span><span className="font-bold capitalize">{key}:</span> {val}</span>
+                           <span><span className="font-bold capitalize">{key}:</span> {val as string}</span>
                         </li>
                      ))}
                   </ul>
@@ -273,7 +389,7 @@ export const ProductDetails: React.FC = () => {
                      <div className="flex flex-col mb-1">
                         <span className="text-sm text-gray-500 font-bold">Total Price</span>
                         <div className="flex items-baseline gap-2">
-                           <span className="text-4xl font-black text-slate-900">{product.price} <span className="text-lg text-gray-400">KWD</span></span>
+                           <span className="text-4xl font-black text-slate-900">{currentPrice} <span className="text-lg text-gray-400">KWD</span></span>
                         </div>
                      </div>
                      {product.originalPrice && <div className="text-sm text-gray-400 line-through font-medium">Was: {product.originalPrice} KWD</div>}
@@ -314,9 +430,9 @@ export const ProductDetails: React.FC = () => {
                         <div className="flex items-center border border-gray-200 rounded-xl bg-gray-50">
                            <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="w-10 h-10 flex items-center justify-center hover:bg-white rounded-l-xl transition-colors text-gray-600" disabled={!inStock}><Minus size={16}/></button>
                            <span className="w-8 text-center font-bold text-gray-900 text-sm bg-white h-10 flex items-center justify-center border-x border-gray-200">{quantity}</span>
-                           <button onClick={() => setQuantity(Math.min(product.stock, quantity + 1))} className="w-10 h-10 flex items-center justify-center hover:bg-white rounded-r-xl transition-colors text-gray-600" disabled={!inStock}><Plus size={16}/></button>
+                           <button onClick={() => setQuantity(Math.min(currentStock, quantity + 1))} className="w-10 h-10 flex items-center justify-center hover:bg-white rounded-r-xl transition-colors text-gray-600" disabled={!inStock}><Plus size={16}/></button>
                         </div>
-                        {product.stock < 10 && inStock && <span className="text-xs font-bold text-red-500">Only {product.stock} left!</span>}
+                        {currentStock < 10 && inStock && <span className="text-xs font-bold text-red-500">Only {currentStock} left!</span>}
                      </div>
 
                      <button onClick={handleBuyNow} disabled={!inStock} className="w-full py-4 bg-secondary text-primary font-black rounded-xl hover:bg-amber-400 border-b-4 border-amber-600 hover:border-amber-500 active:border-b-0 active:translate-y-1 transition-all shadow-lg shadow-secondary/20 disabled:opacity-50 disabled:cursor-not-allowed">
@@ -372,11 +488,11 @@ export const ProductDetails: React.FC = () => {
                     <div className="grid md:grid-cols-2 gap-8 mb-12">
                        <div className="bg-gray-50 rounded-2xl p-8 border border-gray-100">
                           <h4 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><Zap size={20} className="text-amber-500"/> Performance</h4>
-                          <p className="text-gray-600 text-sm leading-relaxed">Powered by the latest {product.specs.processor}, this device handles multitasking and heavy gaming with ease. Experience zero lag and maximum efficiency.</p>
+                          <p className="text-gray-600 text-sm leading-relaxed">Powered by the latest chipset, this device handles multitasking and heavy gaming with ease. Experience zero lag and maximum efficiency.</p>
                        </div>
                        <div className="bg-gray-50 rounded-2xl p-8 border border-gray-100">
                           <h4 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><Maximize2 size={20} className="text-blue-500"/> Display</h4>
-                          <p className="text-gray-600 text-sm leading-relaxed">Immerse yourself in the {product.specs.screen}. Vibrant colors, deep blacks, and a high refresh rate make every interaction smooth and visually stunning.</p>
+                          <p className="text-gray-600 text-sm leading-relaxed">Immerse yourself in the stunning display. Vibrant colors, deep blacks, and a high refresh rate make every interaction smooth and visually stunning.</p>
                        </div>
                     </div>
                  </div>
@@ -384,15 +500,8 @@ export const ProductDetails: React.FC = () => {
               {activeTab === 'specs' && (
                  <div className="max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
                     <h3 className="font-bold text-2xl text-gray-900 mb-8">Technical Specifications</h3>
-                    <div className="border border-gray-200 rounded-2xl overflow-hidden divide-y divide-gray-100">
-                       {Object.entries(product.specs).map(([key, val], i) => (
-                          <div key={key} className={`flex p-5 hover:bg-gray-50 transition-colors`}>
-                             <div className="w-1/3 text-sm font-bold text-gray-500 capitalize flex items-center gap-2">
-                                {key.replace(/([A-Z])/g, ' $1').trim()}
-                             </div>
-                             <div className="w-2/3 text-sm font-semibold text-gray-900">{val}</div>
-                          </div>
-                       ))}
+                    <div className="border border-gray-200 rounded-2xl overflow-hidden divide-y divide-gray-100 bg-white">
+                        {renderSpecs()}
                     </div>
                  </div>
               )}
@@ -442,7 +551,7 @@ export const ProductDetails: React.FC = () => {
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-50 shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.1)] flex items-center gap-4 safe-area-bottom">
          <div className="flex flex-col">
             <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Price</span>
-            <span className="font-black text-xl text-primary">{product.price} KWD</span>
+            <span className="font-black text-xl text-primary">{currentPrice} KWD</span>
          </div>
          <div className="flex flex-1 gap-2">
             <button onClick={handleAddToCart} disabled={!inStock} className="flex-1 bg-gray-100 text-gray-900 font-bold py-3 rounded-xl active:scale-95 disabled:opacity-50">
