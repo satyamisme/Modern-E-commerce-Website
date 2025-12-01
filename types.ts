@@ -86,7 +86,7 @@ export interface ToastMessage {
   type: 'success' | 'error' | 'info';
 }
 
-export type RoleType = 'Super Admin' | 'Admin' | 'Sales' | 'User';
+export type RoleType = 'Super Admin' | 'Admin' | 'Sales' | 'User' | string;
 
 export interface Permission {
   id: string;
@@ -96,7 +96,7 @@ export interface Permission {
 
 export interface RoleDefinition {
   id: string;
-  name: RoleType | string;
+  name: string;
   permissions: string[]; // Array of permission keys
   isSystem?: boolean; // Cannot be deleted if true
 }

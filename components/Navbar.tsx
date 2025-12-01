@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ShoppingBag, Search, Smartphone, Heart, X, User, Menu, Phone, HelpCircle, ArrowLeftRight, ChevronDown, MapPin, Tablet, Watch, Headphones, Grid, LogOut, Package, LayoutDashboard, ChevronRight, Zap } from 'lucide-react';
