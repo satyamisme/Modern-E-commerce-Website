@@ -24,6 +24,7 @@ export interface Product {
   brand: string;
   price: number;
   originalPrice?: number;
+  costPrice?: number; // New: For margin calculation
   monthlyPrice?: number;
   rating: number;
   reviewsCount?: number;
@@ -48,6 +49,9 @@ export interface Product {
   tags: string[];
   express?: boolean;
   stock: number;
+  reorderPoint?: number; // New: Inventory alert threshold
+  supplier?: string; // New: Supplier info
+  sku?: string; // New: Stock Keeping Unit
   reviews?: Review[];
   seo?: {
     metaTitle?: string;
@@ -93,15 +97,17 @@ export interface Order {
   id: string;
   date: string;
   total: number;
-  status: 'Processing' | 'Shipped' | 'Delivered' | 'Cancelled';
+  status: 'New' | 'Fraud Scan' | 'Processing' | 'Picking' | 'QC' | 'Shipping' | 'Delivered' | 'Cancelled' | 'Returned';
   paymentStatus: 'Pending' | 'Paid' | 'Failed';
   paymentMethod: 'KNET' | 'Credit Card';
   items: CartItem[];
+  fraudScore?: number; // 0-100 (Safe to High Risk)
   customer: {
     name: string;
     email: string;
     phone: string;
     address: string;
+    segment?: 'VIP' | 'New' | 'At-Risk';
   };
 }
 
