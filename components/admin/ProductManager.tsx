@@ -5,7 +5,7 @@ import {
    Edit, Trash2, Plus, Search, X, 
    FileText, DollarSign, ImageIcon, Layers, Globe, 
    Upload, RefreshCw, Box, CheckCircle, 
-   Palette, ArrowLeft, ChevronRight, Wand2, ChevronLeft, Calculator, Tag, BrainCircuit, Filter, LayoutTemplate, Star
+   Palette, ArrowLeft, ChevronRight, Wand2, ChevronLeft, Calculator, Tag, BrainCircuit, Filter, LayoutTemplate, Star, Check
 } from 'lucide-react';
 import { fetchPhoneSpecs, findProductImage, searchMobileModels, generateSEO } from '../../services/geminiService';
 
@@ -23,6 +23,8 @@ export const ProductManager: React.FC = () => {
   const [aiLoading, setAiLoading] = useState(false);
   const [imageTab, setImageTab] = useState<'fetch' | 'url' | 'upload'>('fetch');
   const [imageUrlInput, setImageUrlInput] = useState('');
+  const [imageSearchQuery, setImageSearchQuery] = useState('');
+  const [foundImages, setFoundImages] = useState<string[]>([]); // New state for search results
   
   // Autocomplete State
   const [suggestions, setSuggestions] = useState<Array<{model: string, brand: string, variants: string[], year: string}>>([]);
@@ -69,6 +71,11 @@ export const ProductManager: React.FC = () => {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // Sync image search query with product name
+  useEffect(() => {
+      if (editingProduct.name && !imageSearchQuery) setImageSearchQuery(editingProduct.name);
+  }, [editingProduct.name]);
 
   // Debounced Model Search
   useEffect(() => {
@@ -152,56 +159,72 @@ export const ProductManager: React.FC = () => {
     setAiLoading(true);
     showToast(`Fetching full specs for ${modelToFetch}...`, 'info');
     
-    const data = await fetchPhoneSpecs(modelToFetch);
-    
-    if(data) {
-       setEditingProduct(prev => {
-          const newColors = data.colors && data.colors.length > 0 ? data.colors : prev.colors || [];
-          let newStorage = prev.storageOptions?.length ? prev.storageOptions : ['128GB', '256GB', '512GB'];
-          
-          if (data.specs && data.specs.Memory && typeof data.specs.Memory === 'object') {
-             const internalMem = (data.specs.Memory as any)["Internal"];
-             if (internalMem) {
-                const extracted = internalMem.match(/(\d+(?:GB|TB))/g);
-                if (extracted) {
-                   newStorage = Array.from(new Set(extracted));
-                }
-             }
-          }
-          
-          return {
-            ...prev,
-            brand: data.brand || prev.brand,
-            price: data.price || prev.price,
-            description: data.description || prev.description,
-            specs: data.specs || prev.specs,
-            colors: newColors,
-            storageOptions: newStorage,
-            seo: data.seo as any
-          };
-       });
-       showToast('Full specs & Variants loaded! Check Variants tab.', 'success');
-    } else {
-       showToast('Could not fetch specs.', 'error');
+    try {
+        const data = await fetchPhoneSpecs(modelToFetch);
+        
+        if(data) {
+           setEditingProduct(prev => {
+              const newColors = data.colors && data.colors.length > 0 ? data.colors : prev.colors || [];
+              let newStorage = prev.storageOptions?.length ? prev.storageOptions : ['128GB', '256GB', '512GB'];
+              
+              if (data.specs && data.specs.Memory && typeof data.specs.Memory === 'object') {
+                 const internalMem = (data.specs.Memory as any)["Internal"];
+                 if (internalMem) {
+                    const extracted = internalMem.match(/(\d+(?:GB|TB))/g);
+                    if (extracted) {
+                       newStorage = Array.from(new Set(extracted));
+                    }
+                 }
+              }
+              
+              return {
+                ...prev,
+                brand: data.brand || prev.brand,
+                price: data.price || prev.price,
+                description: data.description || prev.description,
+                specs: data.specs || prev.specs,
+                colors: newColors,
+                storageOptions: newStorage,
+                seo: data.seo as any
+              };
+           });
+           showToast('Full specs & Variants loaded! Check Variants tab.', 'success');
+        } else {
+           showToast('Could not generate specs. Please try again or enter manually.', 'error');
+        }
+    } catch(e) {
+        showToast('Error generating specifications', 'error');
     }
     setAiLoading(false);
   };
 
-  const handleFetchImages = async () => {
-      if(!editingProduct.name) {
-          showToast('Please enter a product name first', 'error');
+  const handleFetchImages = async (customQuery?: string) => {
+      const query = customQuery || imageSearchQuery;
+      if(!query) {
+          showToast('Please enter a search query', 'error');
           return;
       }
       setAiLoading(true);
-      showToast('Searching web for images...', 'info');
-      const urls = await findProductImage(editingProduct.name);
+      showToast(`Searching images for: ${query}...`, 'info');
+      setFoundImages([]); // Clear previous search
+      
+      const urls = await findProductImage(query);
       if (urls.length > 0) {
-          setEditingProduct(prev => ({ ...prev, images: [...(prev.images || []), ...urls] }));
-          showToast(`Found ${urls.length} images`, 'success');
+          setFoundImages(urls);
+          showToast(`Found ${urls.length} images. Select ones to keep.`, 'success');
       } else {
-          showToast('No public images found. Try uploading or URL.', 'error');
+          showToast('No suitable images found. Try a different query.', 'error');
       }
       setAiLoading(false);
+  };
+
+  const toggleImageSelection = (url: string) => {
+      const currentImages = editingProduct.images || [];
+      if (currentImages.includes(url)) {
+          setEditingProduct(prev => ({ ...prev, images: prev.images?.filter(i => i !== url) }));
+      } else {
+          setEditingProduct(prev => ({ ...prev, images: [...currentImages, url] }));
+      }
   };
 
   const handleAddImageUrl = () => {
@@ -213,7 +236,6 @@ export const ProductManager: React.FC = () => {
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
      if (e.target.files && e.target.files.length > 0) {
-        // Fix: Explicitly case file to any or File to satisfy TS
         const newImages = Array.from(e.target.files).map((file: any) => URL.createObjectURL(file));
         setEditingProduct(prev => ({ ...prev, images: [...(prev.images || []), ...newImages] }));
      }
@@ -315,12 +337,22 @@ export const ProductManager: React.FC = () => {
 
   // AI SEO Generator
   const handleGenerateSEO = async () => {
-      if(!editingProduct.name || !editingProduct.description) {
-          showToast('Product name and description required for AI SEO', 'error');
+      if(!editingProduct.name) {
+          showToast('Product name required for AI SEO', 'error');
           return;
       }
       setAiLoading(true);
-      const result = await generateSEO(editingProduct.name, editingProduct.description);
+      showToast('Analyzing product features, colors & market data...', 'info');
+      
+      const result = await generateSEO(
+          editingProduct.name, 
+          editingProduct.description || '',
+          editingProduct.price,
+          editingProduct.brand,
+          editingProduct.specs,
+          editingProduct.colors // Pass colors for better description generation
+      );
+
       if(result) {
           setEditingProduct(prev => ({
               ...prev,
@@ -337,40 +369,72 @@ export const ProductManager: React.FC = () => {
       setAiLoading(false);
   };
 
+  // Improved Spec Rendering (GSMArena Style)
   const renderSpecGroup = (groupName: string, groupData: any) => {
+      if (typeof groupData !== 'object' || groupData === null) return null;
+
       return (
-          <div key={groupName} className="mb-6 bg-gray-50 rounded-xl border border-gray-200 overflow-hidden">
-              <div className="bg-gray-100 px-4 py-3 border-b border-gray-200 font-bold text-gray-700 flex justify-between items-center text-sm">
-                  <span>{groupName}</span>
+          <div key={groupName} className="mb-4 border border-gray-200 rounded-lg overflow-hidden">
+              <div className="bg-gray-100 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
+                  <span className="font-bold text-red-700 uppercase text-xs tracking-wider">{groupName}</span>
                   <button type="button" onClick={() => {
                       const newSpecs = {...editingProduct.specs};
                       delete newSpecs[groupName];
                       setEditingProduct({...editingProduct, specs: newSpecs});
-                  }} className="text-red-400 hover:text-red-600"><Trash2 size={14}/></button>
+                  }} className="text-gray-400 hover:text-red-600"><Trash2 size={14}/></button>
               </div>
-              <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {Object.entries(groupData).map(([key, val]: any) => (
-                      <div key={key} className="flex flex-col">
-                          <label className="text-[10px] uppercase font-bold text-gray-400 mb-1 truncate" title={key}>{key}</label>
-                          <input 
-                              type="text" 
-                              value={val} 
-                              onChange={(e) => {
-                                  const newGroup = {...groupData, [key]: e.target.value};
-                                  setEditingProduct(prev => ({
-                                      ...prev,
-                                      specs: { ...prev.specs, [groupName]: newGroup }
-                                  }));
-                              }}
-                              className="p-2 bg-white border border-gray-200 rounded-lg text-sm focus:border-primary outline-none"
-                          />
+              <div className="bg-white">
+                  {Object.entries(groupData).map(([key, val]: any, idx) => (
+                      <div key={key} className={`flex text-sm ${idx !== Object.keys(groupData).length - 1 ? 'border-b border-gray-50' : ''}`}>
+                          <div className="w-1/3 p-2 bg-gray-50/50 border-r border-gray-50 flex items-center">
+                              <input 
+                                  type="text" 
+                                  value={key} 
+                                  onChange={(e) => {
+                                      const newKey = e.target.value;
+                                      const newGroup = {...groupData};
+                                      delete newGroup[key];
+                                      newGroup[newKey] = val;
+                                      setEditingProduct(prev => ({
+                                          ...prev,
+                                          specs: { ...prev.specs, [groupName]: newGroup }
+                                      }));
+                                  }}
+                                  className="w-full bg-transparent font-semibold text-gray-600 text-xs outline-none text-right pr-2"
+                              />
+                          </div>
+                          <div className="flex-1 p-2 flex items-center relative group">
+                              <input 
+                                  type="text" 
+                                  value={val} 
+                                  onChange={(e) => {
+                                      const newGroup = {...groupData, [key]: e.target.value};
+                                      setEditingProduct(prev => ({
+                                          ...prev,
+                                          specs: { ...prev.specs, [groupName]: newGroup }
+                                      }));
+                                  }}
+                                  className="w-full bg-transparent text-gray-800 outline-none"
+                              />
+                              <button 
+                                type="button"
+                                onClick={() => {
+                                    const newGroup = {...groupData};
+                                    delete newGroup[key];
+                                    setEditingProduct(prev => ({ ...prev, specs: { ...prev.specs, [groupName]: newGroup } }));
+                                }}
+                                className="absolute right-2 opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 transition-all"
+                              >
+                                  <X size={12} />
+                              </button>
+                          </div>
                       </div>
                   ))}
-                  <button type="button" className="flex items-center justify-center p-2 border border-dashed border-gray-300 rounded-lg text-gray-400 hover:text-primary hover:border-primary transition-colors text-xs font-bold" onClick={() => {
-                       const newGroup = {...groupData, "New Feature": ""};
+                  <button type="button" className="w-full py-1 text-[10px] text-blue-500 font-bold hover:bg-blue-50 transition-colors" onClick={() => {
+                       const newGroup = {...groupData, [`New Feature`]: ""};
                        setEditingProduct(prev => ({ ...prev, specs: { ...prev.specs, [groupName]: newGroup } }));
                   }}>
-                      <Plus size={14} className="mr-1"/> Add Field
+                      + Add Row
                   </button>
               </div>
           </div>
@@ -535,8 +599,8 @@ export const ProductManager: React.FC = () => {
                 <div className="flex border-b border-gray-100 overflow-x-auto bg-white px-4">
                     <TabButton tab="basic" icon={FileText} label="Basic Info" />
                     <TabButton tab="variants" icon={Box} label="Variants & Stock" />
-                    <TabButton tab="media" icon={ImageIcon} label="Media" />
-                    <TabButton tab="specs" icon={Layers} label="Specifications" />
+                    <TabButton tab="media" icon={ImageIcon} label="Media Manager" />
+                    <TabButton tab="specs" icon={Layers} label="Detailed Specs" />
                     <TabButton tab="seo" icon={Globe} label="SEO" />
                     <TabButton tab="storefront" icon={LayoutTemplate} label="Storefront" />
                 </div>
@@ -628,52 +692,6 @@ export const ProductManager: React.FC = () => {
                                         </div>
                                     </div>
                                 </div>
-                            </div>
-
-                            {/* Enhanced Stock & Price Snapshot */}
-                            <div className="col-span-1 lg:col-span-3 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-                                <div className="flex justify-between items-center mb-4">
-                                   <h4 className="font-bold text-gray-900 flex items-center gap-2"><Box size={18}/> Stock & Price Snapshot</h4>
-                                   <div className="text-xs font-bold text-gray-500 bg-gray-50 px-3 py-1 rounded-lg border border-gray-200">
-                                      Total Variants: {editingProduct.variants?.length || 0}
-                                   </div>
-                                </div>
-                                
-                                {editingProduct.variants && editingProduct.variants.length > 0 ? (
-                                   <div className="overflow-x-auto border border-gray-200 rounded-xl">
-                                      <table className="w-full text-sm text-left">
-                                         <thead className="bg-gray-50 text-xs text-gray-500 uppercase font-bold tracking-wider">
-                                            <tr>
-                                               <th className="p-3">Color</th>
-                                               <th className="p-3">Storage</th>
-                                               <th className="p-3">Price</th>
-                                               <th className="p-3 text-right">Stock</th>
-                                            </tr>
-                                         </thead>
-                                         <tbody className="divide-y divide-gray-100">
-                                            {editingProduct.variants.map((v, i) => (
-                                               <tr key={i} className="hover:bg-gray-50 transition-colors">
-                                                  <td className="p-3 font-medium text-gray-900 flex items-center gap-2">
-                                                     <div className="w-3 h-3 rounded-full border border-gray-200 shadow-sm" style={{backgroundColor: v.color}}></div>
-                                                     {v.color}
-                                                  </td>
-                                                  <td className="p-3 text-gray-600 font-bold">{v.storage}</td>
-                                                  <td className="p-3 font-medium">{v.price} KWD</td>
-                                                  <td className="p-3 text-right">
-                                                     <span className={`px-2 py-0.5 rounded text-xs font-bold ${v.stock > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                                        {v.stock}
-                                                     </span>
-                                                  </td>
-                                               </tr>
-                                            ))}
-                                         </tbody>
-                                      </table>
-                                   </div>
-                                ) : (
-                                   <div className="text-center py-8 text-gray-400 text-sm bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                                      No variants generated yet. Go to "Variants & Stock" tab to create them.
-                                   </div>
-                                )}
                             </div>
                          </div>
                       )}
@@ -872,25 +890,87 @@ export const ProductManager: React.FC = () => {
                             <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
                                 <h4 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><ImageIcon size={18}/> Product Images</h4>
                                 
-                                <div className="flex gap-4 mb-4 border-b border-gray-100">
-                                    <button type="button" onClick={() => setImageTab('fetch')} className={`pb-2 px-2 text-sm font-bold border-b-2 transition-colors ${imageTab === 'fetch' ? 'border-primary text-primary' : 'border-transparent text-gray-500'}`}>AI Search</button>
+                                <div className="flex gap-4 mb-6 border-b border-gray-100">
+                                    <button type="button" onClick={() => setImageTab('fetch')} className={`pb-2 px-2 text-sm font-bold border-b-2 transition-colors ${imageTab === 'fetch' ? 'border-primary text-primary' : 'border-transparent text-gray-500'}`}>Search & Select</button>
                                     <button type="button" onClick={() => setImageTab('upload')} className={`pb-2 px-2 text-sm font-bold border-b-2 transition-colors ${imageTab === 'upload' ? 'border-primary text-primary' : 'border-transparent text-gray-500'}`}>Upload</button>
                                     <button type="button" onClick={() => setImageTab('url')} className={`pb-2 px-2 text-sm font-bold border-b-2 transition-colors ${imageTab === 'url' ? 'border-primary text-primary' : 'border-transparent text-gray-500'}`}>Direct URL</button>
                                 </div>
 
+                                {/* SEARCH MODE */}
                                 {imageTab === 'fetch' && (
-                                    <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-center justify-between">
-                                        <div className="text-sm text-blue-800">
-                                            <strong>AI Image Search:</strong> We'll find official marketing images for <em>{editingProduct.name || 'this product'}</em>.
+                                    <div className="space-y-6">
+                                        <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 flex flex-col gap-3">
+                                            <div className="text-sm text-blue-800">
+                                                <strong>AI Image Search:</strong> Find images online and select the ones you want to keep.
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <input 
+                                                    type="text" 
+                                                    value={imageSearchQuery}
+                                                    onChange={e => setImageSearchQuery(e.target.value)}
+                                                    className="flex-1 p-2 bg-white border border-blue-200 rounded-lg text-sm"
+                                                    placeholder="e.g. Samsung S24 Ultra Titanium Gray back view"
+                                                />
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => handleFetchImages()} 
+                                                    disabled={aiLoading}
+                                                    className="px-4 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                                                >
+                                                    {aiLoading ? <RefreshCw className="animate-spin" size={16}/> : <Search size={16}/>}
+                                                    Search
+                                                </button>
+                                            </div>
+                                            {/* Quick Color Buttons */}
+                                            {editingProduct.colors && editingProduct.colors.length > 0 && (
+                                                <div className="flex flex-wrap gap-2 mt-1 items-center">
+                                                    <span className="text-xs font-bold text-blue-400 self-center">Quick Search:</span>
+                                                    {editingProduct.colors.map(color => (
+                                                        <button 
+                                                            key={color}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const query = `${editingProduct.name} ${color} official render`;
+                                                                setImageSearchQuery(query);
+                                                                handleFetchImages(query);
+                                                            }}
+                                                            className="px-3 py-1.5 bg-white border border-blue-200 rounded-lg text-xs font-bold text-blue-600 hover:bg-blue-600 hover:text-white transition-colors flex items-center gap-2"
+                                                        >
+                                                            <span className="w-2 h-2 rounded-full border border-gray-300" style={{backgroundColor: color}}></span>
+                                                            {color}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
-                                        <button 
-                                            type="button" 
-                                            onClick={handleFetchImages} 
-                                            disabled={aiLoading}
-                                            className="px-4 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                                        >
-                                            {aiLoading ? 'Searching...' : 'Find Images'}
-                                        </button>
+
+                                        {/* Found Images Grid */}
+                                        {foundImages.length > 0 && (
+                                            <div>
+                                                <h5 className="text-sm font-bold text-gray-700 mb-3">Found Results (Click to Select)</h5>
+                                                <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
+                                                    {foundImages.map((img, idx) => {
+                                                        const isSelected = editingProduct.images?.includes(img);
+                                                        return (
+                                                            <div 
+                                                                key={idx} 
+                                                                onClick={() => toggleImageSelection(img)}
+                                                                className={`relative group aspect-square rounded-xl border-2 overflow-hidden bg-white shadow-sm cursor-pointer transition-all ${isSelected ? 'border-green-500 ring-2 ring-green-100' : 'border-gray-200 hover:border-blue-400'}`}
+                                                            >
+                                                                <img src={img} className="w-full h-full object-contain p-2" alt="Found" />
+                                                                {isSelected && (
+                                                                    <div className="absolute inset-0 bg-green-500/10 flex items-center justify-center">
+                                                                        <div className="bg-green-500 text-white p-1 rounded-full shadow-lg">
+                                                                            <Check size={16} />
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 
@@ -932,26 +1012,31 @@ export const ProductManager: React.FC = () => {
                                     </div>
                                 )}
 
-                                <div className="grid grid-cols-4 sm:grid-cols-6 gap-4 mt-6">
-                                    {editingProduct.images?.map((img, idx) => (
-                                        <div key={idx} className="relative group aspect-square rounded-xl border border-gray-200 overflow-hidden bg-gray-50">
-                                            <img src={img} className="w-full h-full object-contain" alt="Product" />
-                                            <button 
-                                                type="button"
-                                                onClick={() => setEditingProduct(prev => ({...prev, images: prev.images?.filter((_, i) => i !== idx)}))}
-                                                className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                                            >
-                                                <X size={12}/>
-                                            </button>
-                                            {idx === 0 && <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] font-bold px-1.5 rounded">Main</span>}
-                                        </div>
-                                    ))}
+                                {/* SELECTED GALLERY */}
+                                <div className="mt-8 border-t border-gray-100 pt-6">
+                                    <h5 className="text-sm font-bold text-gray-900 mb-4">Selected Gallery ({editingProduct.images?.length || 0})</h5>
+                                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-4">
+                                        {editingProduct.images?.map((img, idx) => (
+                                            <div key={idx} className="relative group aspect-square rounded-xl border border-gray-200 overflow-hidden bg-gray-50 shadow-sm hover:shadow-md transition-shadow">
+                                                <img src={img} className="w-full h-full object-contain" alt="Product" />
+                                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors"></div>
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => setEditingProduct(prev => ({...prev, images: prev.images?.filter((_, i) => i !== idx)}))}
+                                                    className="absolute top-1 right-1 p-1.5 bg-white text-red-500 rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50"
+                                                >
+                                                    <X size={14}/>
+                                                </button>
+                                                {idx === 0 && <span className="absolute bottom-1 left-1 bg-black/70 text-white text-[10px] font-bold px-2 py-0.5 rounded backdrop-blur-sm">Main</span>}
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
                         </div>
                       )}
 
-                      {/* --- SPECS TAB --- */}
+                      {/* --- SPECS TAB (GSMArena Style) --- */}
                       {activeTab === 'specs' && (
                           <div className="space-y-6">
                               <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
@@ -961,7 +1046,7 @@ export const ProductManager: React.FC = () => {
                                           type="button" 
                                           onClick={() => handleFetchSpecs()}
                                           disabled={aiLoading}
-                                          className="px-4 py-2 bg-purple-100 text-purple-700 font-bold rounded-lg hover:bg-purple-200 text-sm flex items-center gap-2"
+                                          className="px-4 py-2 bg-purple-100 text-purple-700 font-bold rounded-lg hover:bg-purple-200 text-sm flex items-center gap-2 transition-colors"
                                       >
                                           {aiLoading ? <RefreshCw className="animate-spin" size={16}/> : <BrainCircuit size={16}/>}
                                           Auto-Fill with AI
@@ -969,16 +1054,18 @@ export const ProductManager: React.FC = () => {
                                   </div>
 
                                   {editingProduct.specs && Object.keys(editingProduct.specs).length > 0 ? (
-                                      Object.entries(editingProduct.specs).map(([group, data]) => renderSpecGroup(group, data))
+                                      <div className="grid grid-cols-1 gap-6">
+                                          {Object.entries(editingProduct.specs).map(([group, data]) => renderSpecGroup(group, data))}
+                                      </div>
                                   ) : (
                                       <div className="text-center py-12 bg-gray-50 rounded-xl border border-dashed border-gray-200">
                                           <p className="text-gray-500 text-sm mb-4">No specifications defined yet.</p>
                                           <button 
                                               type="button" 
-                                              onClick={() => setEditingProduct(prev => ({...prev, specs: { "General": { "Model": "" } }}))}
+                                              onClick={() => setEditingProduct(prev => ({...prev, specs: { "Network": { "Technology": "" } }}))}
                                               className="px-4 py-2 bg-white border border-gray-300 text-gray-700 font-bold rounded-lg hover:bg-gray-100 text-sm"
                                           >
-                                              Add Manually
+                                              Start Manually
                                           </button>
                                       </div>
                                   )}
@@ -992,7 +1079,7 @@ export const ProductManager: React.FC = () => {
                                                   setEditingProduct(prev => ({...prev, specs: { ...prev.specs, [name]: { "Feature": "" } }}));
                                               }
                                           }}
-                                          className="w-full py-3 border-2 border-dashed border-gray-200 rounded-xl text-gray-400 font-bold hover:border-primary hover:text-primary transition-colors flex items-center justify-center gap-2"
+                                          className="w-full py-4 mt-4 border-2 border-dashed border-gray-200 rounded-xl text-gray-400 font-bold hover:border-primary hover:text-primary transition-colors flex items-center justify-center gap-2"
                                      >
                                           <Plus size={18}/> Add New Spec Group
                                      </button>
@@ -1001,7 +1088,7 @@ export const ProductManager: React.FC = () => {
                           </div>
                       )}
 
-                      {/* --- SEO TAB --- */}
+                      {/* --- SEO TAB (unchanged) --- */}
                       {activeTab === 'seo' && (
                           <div className="space-y-6">
                               <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
@@ -1011,9 +1098,10 @@ export const ProductManager: React.FC = () => {
                                           type="button" 
                                           onClick={handleGenerateSEO}
                                           disabled={aiLoading}
-                                          className="px-4 py-2 bg-green-100 text-green-700 font-bold rounded-lg hover:bg-green-200 text-sm flex items-center gap-2"
+                                          className="px-4 py-2 bg-green-100 text-green-700 font-bold rounded-lg hover:bg-green-200 text-sm flex items-center gap-2 transition-colors"
                                       >
-                                          <Wand2 size={16}/> Generate with AI
+                                          {aiLoading ? <RefreshCw className="animate-spin" size={16}/> : <Wand2 size={16}/>} 
+                                          Generate Sales Copy
                                       </button>
                                   </div>
 
@@ -1025,7 +1113,7 @@ export const ProductManager: React.FC = () => {
                                                   type="text" 
                                                   value={editingProduct.seo?.metaTitle || ''}
                                                   onChange={e => setEditingProduct({...editingProduct, seo: {...editingProduct.seo, metaTitle: e.target.value}})}
-                                                  className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary outline-none pr-12"
+                                                  className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary outline-none pr-12 transition-all"
                                                   placeholder="Product Name | LAKKI PHONES"
                                                   maxLength={60}
                                               />
@@ -1041,7 +1129,7 @@ export const ProductManager: React.FC = () => {
                                               <textarea 
                                                   value={editingProduct.seo?.metaDescription || ''}
                                                   onChange={e => setEditingProduct({...editingProduct, seo: {...editingProduct.seo, metaDescription: e.target.value}})}
-                                                  className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary outline-none h-24 resize-none"
+                                                  className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary outline-none h-24 resize-none transition-all"
                                                   placeholder="Buy [Product Name] in Kuwait..."
                                                   maxLength={160}
                                               />
@@ -1057,7 +1145,7 @@ export const ProductManager: React.FC = () => {
                                               type="text" 
                                               value={editingProduct.seo?.keywords?.join(', ') || ''}
                                               onChange={e => setEditingProduct({...editingProduct, seo: {...editingProduct.seo, keywords: e.target.value.split(',').map(s => s.trim())}})}
-                                              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary outline-none"
+                                              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary outline-none transition-all"
                                               placeholder="mobile, kuwait, samsung, 5g"
                                           />
                                           <p className="text-[10px] text-gray-400 mt-1">Comma separated</p>
@@ -1082,7 +1170,7 @@ export const ProductManager: React.FC = () => {
                           </div>
                       )}
 
-                      {/* --- STOREFRONT TAB --- */}
+                      {/* ... STOREFRONT TAB (unchanged) ... */}
                       {activeTab === 'storefront' && (
                         <div className="space-y-6">
                             <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">

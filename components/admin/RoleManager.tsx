@@ -9,7 +9,10 @@ export const RoleManager: React.FC = () => {
   const [editingRole, setEditingRole] = useState<Partial<RoleDefinition> | null>(null);
 
   const handleSaveRole = () => {
-    if (!editingRole || !editingRole.name) return;
+    if (!editingRole || !editingRole.name) {
+        showToast('Role name is required', 'error');
+        return;
+    }
 
     if (editingRole.id) {
        updateRole(editingRole as RoleDefinition);
@@ -18,7 +21,8 @@ export const RoleManager: React.FC = () => {
           id: `role-${Date.now()}`,
           name: editingRole.name,
           permissions: editingRole.permissions || [],
-          isSystem: false
+          isSystem: false,
+          description: editingRole.description || 'Custom Role'
        };
        addRole(newRole);
     }
@@ -57,7 +61,10 @@ export const RoleManager: React.FC = () => {
              {roles.map(role => (
                 <div key={role.id} className="bg-gray-50 rounded-2xl p-6 border border-gray-200 relative group hover:border-primary transition-colors">
                    <div className="flex justify-between items-start mb-4">
-                      <h3 className="font-bold text-lg text-gray-900">{role.name}</h3>
+                      <div>
+                          <h3 className="font-bold text-lg text-gray-900">{role.name}</h3>
+                          <p className="text-xs text-gray-500">{role.description}</p>
+                      </div>
                       <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                          <button onClick={() => setEditingRole(role)} className="p-1.5 bg-white text-blue-600 rounded-lg shadow-sm hover:bg-blue-50">
                             <Edit size={16}/>
@@ -96,16 +103,28 @@ export const RoleManager: React.FC = () => {
                    {editingRole.id ? 'Edit Role' : 'Create New Role'}
                 </h3>
                 
-                <div className="mb-6">
-                   <label className="block text-sm font-bold text-gray-700 mb-2">Role Name</label>
-                   <input 
-                      type="text" 
-                      value={editingRole.name} 
-                      onChange={e => setEditingRole({...editingRole, name: e.target.value})}
-                      disabled={editingRole.isSystem}
-                      className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary outline-none"
-                      placeholder="e.g. Content Editor"
-                   />
+                <div className="mb-6 space-y-4">
+                   <div>
+                       <label className="block text-sm font-bold text-gray-700 mb-2">Role Name</label>
+                       <input 
+                          type="text" 
+                          value={editingRole.name} 
+                          onChange={e => setEditingRole({...editingRole, name: e.target.value})}
+                          disabled={editingRole.isSystem}
+                          className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary outline-none"
+                          placeholder="e.g. Content Editor"
+                       />
+                   </div>
+                   <div>
+                       <label className="block text-sm font-bold text-gray-700 mb-2">Description</label>
+                       <input 
+                          type="text" 
+                          value={editingRole.description || ''} 
+                          onChange={e => setEditingRole({...editingRole, description: e.target.value})}
+                          className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary outline-none"
+                          placeholder="What can this role do?"
+                       />
+                   </div>
                 </div>
 
                 <div className="mb-8">

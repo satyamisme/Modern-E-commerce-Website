@@ -5,13 +5,14 @@ export const MASTER_SCHEMA_SQL = `
 create extension if not exists "uuid-ossp";
 
 -- 1. PRODUCTS
+-- Using quoted identifiers to match TypeScript interfaces (CamelCase)
 create table if not exists public.products (
   id text primary key,
   name text not null,
   brand text,
   price numeric not null,
-  original_price numeric,
-  cost_price numeric,
+  "originalPrice" numeric,
+  "costPrice" numeric,
   category text,
   stock integer default 0,
   image text,
@@ -20,19 +21,21 @@ create table if not exists public.products (
   description text,
   tags text[],
   colors text[],
-  storage_options text[],
+  "storageOptions" text[],
   variants jsonb default '[]'::jsonb,
-  is_hero boolean default false,
-  hero_title text,
-  hero_subtitle text,
-  hero_image text,
-  is_featured boolean default false,
-  is_ticker boolean default false,
-  reorder_point integer default 5,
+  "isHero" boolean default false,
+  "heroTitle" text,
+  "heroSubtitle" text,
+  "heroImage" text,
+  "isFeatured" boolean default false,
+  "isTicker" boolean default false,
+  "reorderPoint" integer default 5,
   supplier text,
   sku text,
   rating numeric default 0,
-  reviews_count integer default 0,
+  "reviewsCount" integer default 0,
+  "imageSeed" integer,
+  express boolean default false,
   seo jsonb default '{}'::jsonb,
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
@@ -43,11 +46,11 @@ create table if not exists public.orders (
   date text,
   total numeric,
   status text,
-  payment_status text,
-  payment_method text,
+  "paymentStatus" text,
+  "paymentMethod" text,
   items jsonb,
   customer jsonb,
-  fraud_score numeric,
+  "fraudScore" numeric,
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
@@ -58,9 +61,9 @@ create table if not exists public.customers (
   email text,
   phone text,
   segment text,
-  total_spent numeric default 0,
-  orders_count integer default 0,
-  last_order_date text,
+  "totalSpent" numeric default 0,
+  "ordersCount" integer default 0,
+  "lastOrderDate" text,
   notes text,
   avatar text,
   created_at timestamp with time zone default timezone('utc'::text, now())
@@ -75,7 +78,8 @@ create table if not exists public.warehouses (
   utilization numeric,
   type text,
   phone text,
-  manager_id text,
+  "managerId" text,
+  "openingHours" text,
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
@@ -84,7 +88,7 @@ create table if not exists public.roles (
   id text primary key,
   name text,
   permissions text[],
-  is_system boolean default false,
+  "isSystem" boolean default false,
   description text,
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
@@ -92,26 +96,26 @@ create table if not exists public.roles (
 -- 6. APP SETTINGS
 create table if not exists public.app_settings (
   id serial primary key,
-  store_name text,
+  "storeName" text,
   currency text,
-  support_email text,
-  support_phone text,
-  tax_rate numeric,
-  delivery_fee numeric,
-  free_shipping_threshold numeric,
-  enable_knet boolean,
-  enable_credit_card boolean,
-  enable_whatsapp_payment boolean default true,
-  ai_provider text,
-  social_links jsonb,
+  "supportEmail" text,
+  "supportPhone" text,
+  "taxRate" numeric,
+  "deliveryFee" numeric,
+  "freeShippingThreshold" numeric,
+  "enableKnet" boolean,
+  "enableCreditCard" boolean,
+  "enableWhatsAppPayment" boolean default true,
+  "aiProvider" text,
+  "socialLinks" jsonb,
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
 -- 7. RETURNS
 create table if not exists public.returns (
   id text primary key,
-  order_id text,
-  customer_email text,
+  "orderId" text,
+  "customerEmail" text,
   reason text,
   condition text,
   details text,
@@ -121,12 +125,12 @@ create table if not exists public.returns (
 );
 
 -- Insert Default Settings (Only if empty)
-insert into public.app_settings (store_name, currency, delivery_fee, free_shipping_threshold, support_email)
+insert into public.app_settings ("storeName", currency, "deliveryFee", "freeShippingThreshold", "supportEmail")
 select 'LAKKI PHONES', 'KWD', 5, 50, 'support@lakkiphones.com'
 where not exists (select 1 from public.app_settings);
 
--- Insert Default Roles (Fix for greyed out dashboard)
-insert into public.roles (id, name, permissions, is_system, description)
+-- Insert Default Roles
+insert into public.roles (id, name, permissions, "isSystem", description)
 values 
 ('role-super', 'Super Admin', ARRAY['all'], true, 'Full system access'),
 ('role-shop-admin', 'Shop Admin', ARRAY['manage_orders', 'manage_inventory', 'view_reports', 'manage_customers'], true, 'Manage specific store operations'),
@@ -134,16 +138,32 @@ values
 ('role-warehouse', 'Warehouse Staff', ARRAY['manage_inventory'], true, 'Inventory and stock transfer')
 on conflict (id) do nothing;
 
--- Enable RLS (Open access for demo purposes, secure in production)
+-- Enable RLS
 alter table products enable row level security;
-create policy "Public Access Products" on products for select using (true);
-create policy "Admin Write Products" on products for all using (true);
+create policy "Public Read" on products for select using (true);
+create policy "Admin Write" on products for all using (true);
 
 alter table orders enable row level security;
-create policy "Public Access Orders" on orders for select using (true);
+create policy "Public Read Orders" on orders for select using (true);
 create policy "Admin Write Orders" on orders for all using (true);
 
 alter table app_settings enable row level security;
-create policy "Public Access Settings" on app_settings for select using (true);
+create policy "Public Read Settings" on app_settings for select using (true);
 create policy "Admin Write Settings" on app_settings for all using (true);
+
+alter table roles enable row level security;
+create policy "Public Read Roles" on roles for select using (true);
+create policy "Admin Write Roles" on roles for all using (true);
+
+alter table customers enable row level security;
+create policy "Public Read Customers" on customers for select using (true);
+create policy "Admin Write Customers" on customers for all using (true);
+
+alter table warehouses enable row level security;
+create policy "Public Read Warehouses" on warehouses for select using (true);
+create policy "Admin Write Warehouses" on warehouses for all using (true);
+
+alter table returns enable row level security;
+create policy "Public Read Returns" on returns for select using (true);
+create policy "Admin Write Returns" on returns for all using (true);
 `;

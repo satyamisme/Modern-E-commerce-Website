@@ -124,6 +124,7 @@ interface ShopContextType {
   addWarehouse: (warehouse: Warehouse) => void;
   updateWarehouse: (warehouse: Warehouse) => void;
   removeWarehouse: (id: string) => void;
+  transferStock: (fromId: string, toId: string, productId: string, quantity: number) => void;
 
   addRole: (role: RoleDefinition) => void;
   updateRole: (role: RoleDefinition) => void;
@@ -147,27 +148,39 @@ interface ShopContextType {
 
 const ShopContext = createContext<ShopContextType | undefined>(undefined);
 
+// Helper to safely parse local storage
+const getStoredData = <T,>(key: string, fallback: T): T => {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const item = localStorage.getItem(key);
+    return item ? JSON.parse(item) : fallback;
+  } catch (error) {
+    console.warn(`Error reading localStorage key "${key}":`, error);
+    return fallback;
+  }
+};
+
 export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // State Initialization
+  // State Initialization - Prioritize Local Storage for Offline persistence
   const [isOffline, setIsOffline] = useState(APP_CONFIG.useMockData);
   const [offlineReason, setOfflineReason] = useState<'NETWORK' | 'AUTH' | 'SCHEMA' | null>(null);
 
-  const [products, setProducts] = useState<Product[]>(APP_CONFIG.useMockData ? INITIAL_PRODUCTS : []);
-  const [cart, setCart] = useState<CartItem[]>(() => JSON.parse(localStorage.getItem('lumina_cart') || '[]'));
-  const [wishlist, setWishlist] = useState<Product[]>(() => JSON.parse(localStorage.getItem('lumina_wishlist') || '[]'));
-  const [compareList, setCompareList] = useState<Product[]>(() => JSON.parse(localStorage.getItem('lumina_compare') || '[]'));
-  const [recentlyViewed, setRecentlyViewed] = useState<Product[]>(() => JSON.parse(localStorage.getItem('lumina_recent') || '[]'));
-  const [user, setUser] = useState<User | null>(() => JSON.parse(localStorage.getItem('lumina_user') || 'null'));
-  const [appSettings, setAppSettings] = useState<AppSettings>(() => JSON.parse(localStorage.getItem('lumina_settings') || JSON.stringify(DEFAULT_SETTINGS)));
-  const [roles, setRoles] = useState<RoleDefinition[]>(() => JSON.parse(localStorage.getItem('lumina_roles') || JSON.stringify(INITIAL_ROLES)));
-  const [orders, setOrders] = useState<Order[]>(() => {
-     if (APP_CONFIG.useMockData) return JSON.parse(localStorage.getItem('lumina_orders') || '[]');
-     return [];
-  });
-  const [customers, setCustomers] = useState<CustomerProfile[]>(APP_CONFIG.useMockData ? INITIAL_CUSTOMERS : []);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>(APP_CONFIG.useMockData ? INITIAL_WAREHOUSES : []);
-  const [returns, setReturns] = useState<ReturnRequest[]>(() => JSON.parse(localStorage.getItem('lumina_returns') || '[]'));
-  const [notifications, setNotifications] = useState<Notification[]>(() => JSON.parse(localStorage.getItem('lumina_notifications') || '[]'));
+  // Core Data
+  const [products, setProducts] = useState<Product[]>(() => getStoredData('lumina_products', APP_CONFIG.useMockData ? INITIAL_PRODUCTS : []));
+  const [orders, setOrders] = useState<Order[]>(() => getStoredData('lumina_orders', []));
+  const [customers, setCustomers] = useState<CustomerProfile[]>(() => getStoredData('lumina_customers', APP_CONFIG.useMockData ? INITIAL_CUSTOMERS : []));
+  const [warehouses, setWarehouses] = useState<Warehouse[]>(() => getStoredData('lumina_warehouses', APP_CONFIG.useMockData ? INITIAL_WAREHOUSES : []));
+  const [roles, setRoles] = useState<RoleDefinition[]>(() => getStoredData('lumina_roles', INITIAL_ROLES));
+  const [appSettings, setAppSettings] = useState<AppSettings>(() => getStoredData('lumina_settings', DEFAULT_SETTINGS));
+  const [returns, setReturns] = useState<ReturnRequest[]>(() => getStoredData('lumina_returns', []));
+  const [notifications, setNotifications] = useState<Notification[]>(() => getStoredData('lumina_notifications', []));
+
+  // User Session Data (Always Local)
+  const [cart, setCart] = useState<CartItem[]>(() => getStoredData('lumina_cart', []));
+  const [wishlist, setWishlist] = useState<Product[]>(() => getStoredData('lumina_wishlist', []));
+  const [compareList, setCompareList] = useState<Product[]>(() => getStoredData('lumina_compare', []));
+  const [recentlyViewed, setRecentlyViewed] = useState<Product[]>(() => getStoredData('lumina_recent', []));
+  const [user, setUser] = useState<User | null>(() => getStoredData('lumina_user', null));
   
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -179,36 +192,18 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setTimeout(() => setToast(current => current?.id === id ? null : current), 3000);
   };
 
-  const loadOfflineData = () => {
-      console.log("Initializing Offline Database...");
-      
-      const storedProds = localStorage.getItem('lumina_products');
-      setProducts(storedProds ? JSON.parse(storedProds) : INITIAL_PRODUCTS);
-
-      const storedOrders = localStorage.getItem('lumina_orders');
-      setOrders(storedOrders ? JSON.parse(storedOrders) : []);
-
-      const storedCustomers = localStorage.getItem('lumina_customers');
-      setCustomers(storedCustomers ? JSON.parse(storedCustomers) : INITIAL_CUSTOMERS);
-
-      const storedWarehouses = localStorage.getItem('lumina_warehouses');
-      setWarehouses(storedWarehouses ? JSON.parse(storedWarehouses) : INITIAL_WAREHOUSES);
-
-      const storedRoles = localStorage.getItem('lumina_roles');
-      setRoles(storedRoles ? JSON.parse(storedRoles) : INITIAL_ROLES);
-  };
-
   const seedRoles = async () => {
       console.log("Seeding default roles...");
       setRoles(INITIAL_ROLES); 
       if (!isOffline) {
-          await supabase.from('roles').upsert(INITIAL_ROLES.map(r => ({
+          const { error } = await supabase.from('roles').upsert(INITIAL_ROLES.map(r => ({
               id: r.id,
               name: r.name,
               permissions: r.permissions,
-              is_system: r.isSystem,
+              "isSystem": r.isSystem,
               description: r.description
           })));
+          if (error) console.error("Error seeding roles:", error);
       }
   };
 
@@ -226,9 +221,10 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (status.success) {
         setIsOffline(false);
         setOfflineReason(null);
+        
         // Fetch Real Data from Supabase
         const { data: prodData } = await supabase.from('products').select('*');
-        if (prodData && prodData.length > 0) setProducts(prodData);
+        if (prodData) setProducts(prodData);
 
         const { data: orderData } = await supabase.from('orders').select('*');
         if (orderData) setOrders(orderData);
@@ -245,8 +241,11 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setRoles(roleData);
         } else {
             console.log("Empty roles table detected.");
-            setRoles(INITIAL_ROLES); // Use initial roles in memory while waiting for seed
+            // Keep local initial roles to avoid lockout, but allow seed
         }
+
+        const { data: returnData } = await supabase.from('returns').select('*');
+        if (returnData) setReturns(returnData);
 
         const { data: settingData } = await supabase.from('app_settings').select('*').single();
         if (settingData) setAppSettings(prev => ({...prev, ...settingData}));
@@ -257,7 +256,6 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // 3. Fallback to Offline with specific error
         console.warn(`Connection failed: ${status.message} (${status.code})`);
         setIsOffline(true);
-        loadOfflineData();
         
         // Show informative toast about WHY we are offline
         if (status.code === 'NO_SCHEMA') {
@@ -285,13 +283,14 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => { localStorage.setItem('lumina_compare', JSON.stringify(compareList)); }, [compareList]);
   useEffect(() => { localStorage.setItem('lumina_recent', JSON.stringify(recentlyViewed)); }, [recentlyViewed]);
   
-  // Admin Data Persistence (Only if Offline)
-  useEffect(() => { if (isOffline) localStorage.setItem('lumina_products', JSON.stringify(products)); }, [products, isOffline]);
-  useEffect(() => { if (isOffline) localStorage.setItem('lumina_orders', JSON.stringify(orders)); }, [orders, isOffline]);
-  useEffect(() => { if (isOffline) localStorage.setItem('lumina_roles', JSON.stringify(roles)); }, [roles, isOffline]);
-  useEffect(() => { if (isOffline) localStorage.setItem('lumina_warehouses', JSON.stringify(warehouses)); }, [warehouses, isOffline]);
-  useEffect(() => { if (isOffline) localStorage.setItem('lumina_settings', JSON.stringify(appSettings)); }, [appSettings, isOffline]);
-  useEffect(() => { if (isOffline) localStorage.setItem('lumina_customers', JSON.stringify(customers)); }, [customers, isOffline]);
+  // Admin Data Persistence (Sync to LocalStorage always as backup/offline)
+  useEffect(() => { localStorage.setItem('lumina_products', JSON.stringify(products)); }, [products]);
+  useEffect(() => { localStorage.setItem('lumina_orders', JSON.stringify(orders)); }, [orders]);
+  useEffect(() => { localStorage.setItem('lumina_roles', JSON.stringify(roles)); }, [roles]);
+  useEffect(() => { localStorage.setItem('lumina_warehouses', JSON.stringify(warehouses)); }, [warehouses]);
+  useEffect(() => { localStorage.setItem('lumina_settings', JSON.stringify(appSettings)); }, [appSettings]);
+  useEffect(() => { localStorage.setItem('lumina_customers', JSON.stringify(customers)); }, [customers]);
+  useEffect(() => { localStorage.setItem('lumina_returns', JSON.stringify(returns)); }, [returns]);
 
   useEffect(() => { 
     if(user) localStorage.setItem('lumina_user', JSON.stringify(user));
@@ -305,8 +304,8 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
      if (!isOffline) {
         const { error } = await supabase.from('products').insert([product]);
         if (error) {
-           console.error('Supabase Error:', error);
-           showToast('Failed to save to cloud (Saved locally)', 'error');
+           console.error('Supabase Error:', error.message || JSON.stringify(error));
+           showToast(`Failed to save to cloud: ${error.message || 'Unknown error'}`, 'error');
         }
      }
      showToast('Product added successfully', 'success');
@@ -315,7 +314,8 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const updateProduct = async (product: Product) => {
      setProducts(prev => prev.map(p => p.id === product.id ? product : p));
      if (!isOffline) {
-        await supabase.from('products').update(product).eq('id', product.id);
+        const { error } = await supabase.from('products').update(product).eq('id', product.id);
+        if (error) console.error('Update Error:', error.message || JSON.stringify(error));
      }
      showToast('Product updated', 'success');
   };
@@ -455,17 +455,16 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const checkPermission = (permissionKey: string): boolean => {
     if (!user) return false;
     
-    // FAILSAFE 1: Super Admin always has access, even if Roles table is empty/missing
+    // FAILSAFE 1: Super Admin always has access
     if (user.role === 'Super Admin') return true;
 
-    // FAILSAFE 2: If roles are not loaded yet (empty array), and user is an admin, allow access to settings/system
+    // FAILSAFE 2: If roles are not loaded yet, allow admin emails
     if (roles.length === 0 && (user.email.includes('admin') || user.email.includes('super'))) {
         return true; 
     }
 
     const roleDef = roles.find(r => r.name === user.role);
     if (!roleDef) {
-       // If role is defined in User object but missing in DB roles table, allow if email looks like admin
        if (user.email.includes('admin') || user.email.includes('super')) return true;
        return false;
     }
@@ -526,13 +525,26 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addRole = async (role: RoleDefinition) => {
      setRoles(prev => [...prev, role]);
-     if (!isOffline) await supabase.from('roles').insert(role);
+     if (!isOffline) {
+       const { error } = await supabase.from('roles').insert({
+         id: role.id,
+         name: role.name,
+         permissions: role.permissions,
+         "isSystem": role.isSystem,
+         description: role.description
+       });
+       if(error) console.error("Add Role Error:", error.message);
+     }
      showToast('Role created', 'success');
   };
 
   const updateRole = async (role: RoleDefinition) => {
      setRoles(prev => prev.map(r => r.id === role.id ? role : r));
-     if (!isOffline) await supabase.from('roles').update(role).eq('id', role.id);
+     if (!isOffline) await supabase.from('roles').update({
+       name: role.name,
+       permissions: role.permissions,
+       description: role.description
+     }).eq('id', role.id);
      showToast('Role updated', 'success');
   };
 
@@ -561,6 +573,17 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
      showToast('Location removed', 'info');
   };
 
+  const transferStock = async (fromId: string, toId: string, productId: string, quantity: number) => {
+      // Logic to simulate transfer. In a full system, this would use a transfer log table.
+      // Here we update utilization to simulate space usage changes.
+      setWarehouses(prev => prev.map(w => {
+          if (w.id === fromId) return { ...w, utilization: Math.max(0, w.utilization - 1) };
+          if (w.id === toId) return { ...w, utilization: Math.min(100, w.utilization + 1) };
+          return w;
+      }));
+      showToast('Stock transfer recorded successfully', 'success');
+  };
+
   const addReturnRequest = (request: Omit<ReturnRequest, 'id' | 'date' | 'status'>) => {
      const newReturn = { ...request, id: `RET-${Date.now()}`, date: new Date().toISOString().split('T')[0], status: 'Pending' as const };
      setReturns(prev => [newReturn, ...prev]);
@@ -571,6 +594,16 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const updateReturnStatus = (id: string, status: ReturnRequest['status']) => {
      setReturns(prev => prev.map(r => r.id === id ? { ...r, status } : r));
      if (!isOffline) supabase.from('returns').update({ status }).eq('id', id);
+     
+     // Automated Action: If approved, update order status to 'Returned'
+     if (status === 'Approved') {
+         const ret = returns.find(r => r.id === id);
+         if (ret && ret.orderId) {
+             updateOrderStatus(ret.orderId, 'Returned');
+             showToast('Order status updated to Returned', 'info');
+         }
+     }
+     
      showToast('Return status updated', 'success');
   };
 
@@ -585,7 +618,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSearchQuery, addToCart, removeFromCart, updateQuantity, toggleCart, clearCart, toggleWishlist, isInWishlist, addToCompare, removeFromCompare, isInCompare, addToRecentlyViewed,
       totalAmount, toast, showToast, login, logout, register, addReview, addAddress, removeAddress, createOrder, updateUserProfile,
       updateOrderStatus, deleteOrder, deleteProduct, updateProduct, addProduct, updateSettings, updateCustomer, addRole, updateRole, deleteRole, checkPermission, seedRoles,
-      addWarehouse, updateWarehouse, removeWarehouse, addReturnRequest, updateReturnStatus, markNotificationRead, clearNotifications, retryConnection: checkOnlineStatus
+      addWarehouse, updateWarehouse, removeWarehouse, transferStock, addReturnRequest, updateReturnStatus, markNotificationRead, clearNotifications, retryConnection: checkOnlineStatus
     }}>
       {children}
     </ShopContext.Provider>

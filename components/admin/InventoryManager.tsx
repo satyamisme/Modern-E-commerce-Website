@@ -1,12 +1,11 @@
 
-
 import React, { useState } from 'react';
 import { useShop } from '../../context/ShopContext';
 import { Building2, Package, RefreshCw, ArrowRightLeft, Search, CheckCircle, Clock, X, AlertCircle, ArrowRight, Store, Plus, Trash2 } from 'lucide-react';
 import { Product, Warehouse } from '../../types';
 
 export const InventoryManager: React.FC = () => {
-  const { warehouses, products, showToast, addWarehouse, removeWarehouse } = useShop();
+  const { warehouses, products, showToast, addWarehouse, removeWarehouse, transferStock, updateProduct } = useShop();
   const [searchTerm, setSearchTerm] = useState('');
   const [syncing, setSyncing] = useState(false);
   
@@ -36,13 +35,25 @@ export const InventoryManager: React.FC = () => {
      setSyncing(true);
      showToast('Connecting to ERP System...', 'info');
      
+     // Simulate fetching updated stock from external source
      setTimeout(() => {
+        // Randomly update a few products to simulate external changes
+        const updatedCount = Math.floor(Math.random() * 5) + 1;
+        const shuffled = [...products].sort(() => 0.5 - Math.random()).slice(0, updatedCount);
+        
+        shuffled.forEach(p => {
+            const variation = Math.floor(Math.random() * 10) - 3; // -3 to +6 change
+            if (variation !== 0) {
+                updateProduct({ ...p, stock: Math.max(0, p.stock + variation) });
+            }
+        });
+
         setSyncing(false);
         setSyncHistory(prev => [
-            { id: Date.now(), type: 'Manual Sync', status: 'Success', time: 'Just now', items: Math.floor(Math.random() * 50) },
+            { id: Date.now(), type: 'Manual Sync', status: 'Success', time: 'Just now', items: updatedCount },
             ...prev
         ]);
-        showToast('Inventory successfully synchronized!', 'success');
+        showToast(`Sync complete! Updated ${updatedCount} products from ERP.`, 'success');
      }, 2000);
   };
 
@@ -62,7 +73,7 @@ export const InventoryManager: React.FC = () => {
         return;
      }
      
-     showToast(`Transferred ${transferData.qty} units of ${transferModal.product.name}`, 'success');
+     transferStock(transferData.fromId, transferData.toId, transferModal.product.id, transferData.qty);
      setTransferModal({ isOpen: false, product: null });
   };
 

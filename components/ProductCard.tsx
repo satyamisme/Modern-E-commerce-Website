@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Star, ShoppingBag, Smartphone, Watch, Tablet, Headphones, Zap, ImageOff } from 'lucide-react';
 import { Product } from '../types';
@@ -21,9 +21,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
 
   // Robust Image Selection Logic
   const displayImage = product.image || 
-                       product.images?.[0] || 
+                       (product.images && product.images.length > 0 ? product.images[0] : null) || 
                        product.heroImage || 
-                       `https://picsum.photos/seed/${product.imageSeed}/400/400`;
+                       (product.imageSeed ? `https://picsum.photos/seed/${product.imageSeed}/400/400` : null);
+
+  // Reset error state if product changes
+  useEffect(() => {
+    setImgError(false);
+  }, [product.id, displayImage]);
 
   const handleAddToCart = (e: React.MouseEvent) => {
      e.preventDefault();
@@ -42,6 +47,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
       default: return <ImageOff size={32} className="text-gray-300"/>;
     }
   };
+
+  const showFallback = imgError || !displayImage;
 
   return (
     <div className="group bg-white rounded-xl border border-gray-200 hover:border-primary/50 hover:shadow-lg transition-all duration-300 flex flex-col relative h-full overflow-hidden">
@@ -62,27 +69,30 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
 
       {/* Image Area */}
       <Link to={`/product/${product.id}`} className="block relative p-4 aspect-[4/5] bg-white flex items-center justify-center overflow-hidden">
-        {imgError ? (
+        {showFallback ? (
           <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50 rounded-lg">
              {getCategoryIcon()}
              <span className="text-[10px] text-gray-400 mt-2 font-medium">No Image</span>
           </div>
         ) : (
           <img
-            src={displayImage}
+            src={displayImage!}
             alt={product.name}
-            onError={() => setImgError(true)}
+            onError={(e) => {
+              e.currentTarget.onerror = null; // Prevent infinite loop
+              setImgError(true);
+            }}
             className={`w-full h-full object-contain mix-blend-multiply transform transition-transform duration-500 ease-out ${inStock ? 'group-hover:scale-105' : 'grayscale opacity-50'}`}
             loading="lazy"
           />
         )}
         
         {/* Quick Actions Overlay */}
-        <div className="absolute inset-x-0 bottom-0 p-3 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-full group-hover:translate-y-0 flex justify-center">
+        <div className="absolute inset-x-0 bottom-0 p-3 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-full group-hover:translate-y-0 flex justify-center bg-gradient-to-t from-white/90 to-transparent">
             <button 
               onClick={handleAddToCart}
               disabled={!inStock}
-              className="w-full py-2 bg-primary text-white text-xs font-bold rounded-lg shadow-lg hover:bg-slate-800 flex items-center justify-center gap-2"
+              className="w-full py-2 bg-primary text-white text-xs font-bold rounded-lg shadow-lg hover:bg-slate-800 flex items-center justify-center gap-2 backdrop-blur-sm"
             >
                <ShoppingBag size={14} /> {inStock ? 'Add' : 'Out'}
             </button>

@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Chat, GenerateContentResponse } from "@google/genai";
 import { Product } from "../types";
 import { PRODUCTS } from "../data/products";
@@ -9,7 +8,6 @@ import { APP_CONFIG } from "../config";
 const googleAI = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // --- OPENAI COMPATIBLE FETCH (Grok, DeepSeek, Perplexity, OpenAI) ---
-// This allows using any standard LLM API by changing the base URL in config.
 async function fetchOpenAICompatible(
   endpoint: string, 
   apiKey: string, 
@@ -123,25 +121,40 @@ export const sendMessageToGemini = async (message: string): Promise<string> => {
   }
 };
 
-export const generateSEO = async (productName: string, description: string): Promise<{ metaTitle: string, metaDescription: string, keywords: string[] } | null> => {
+export const generateSEO = async (
+    productName: string, 
+    description: string,
+    price?: number,
+    brand?: string,
+    specs?: any,
+    colors?: string[]
+): Promise<{ metaTitle: string, metaDescription: string, keywords: string[] } | null> => {
     try {
+        const specsStr = specs ? JSON.stringify(specs) : "";
+        const priceStr = price ? `${price} KWD` : "";
+        const colorStr = colors && colors.length > 0 ? `Available Colors: ${colors.join(', ')}` : "";
+        
         const prompt = `
-            Act as an E-commerce Copywriter & SEO Expert.
-            Generate JSON metadata for: "${productName}".
-            Description: "${description.substring(0, 300)}..."
+            Act as a Senior E-commerce SEO Specialist.
+            Generate high-converting JSON metadata for: "${productName}" (${brand || ''}).
+            
+            Context:
+            - Price: ${priceStr}
+            - Colors: ${colorStr}
+            - Specs: ${specsStr}
+            - Base Description: "${description.substring(0, 200)}..."
 
             Requirements:
-            - Title: Catchy, includes "Kuwait", under 60 chars.
-            - Description: Persuasive, mention "Free Delivery", "Official Warranty", under 160 chars.
-            - Keywords: 5-8 high-traffic keywords relevant to Kuwait electronics market.
+            1. Meta Title: Engaging, includes "${productName}", "Kuwait", and a hook (e.g. "Best Price", "Official"). Max 60 chars.
+            2. Meta Description: Persuasive sales copy. MUST include the price (${priceStr}) if available. Mention available colors (${colorStr}). Mention USPs like "Free Delivery", "Official Warranty". Max 160 chars.
+            3. Keywords: 8-10 high-traffic keywords (English & Arabic transliterated if relevant) for Kuwait electronics market.
 
-            Format:
+            Output Format (Strict JSON):
             {
                 "metaTitle": "Title",
                 "metaDescription": "Description",
-                "keywords": ["keyword1", "keyword2"]
+                "keywords": ["k1", "k2"]
             }
-            Return ONLY raw JSON.
         `;
 
         let jsonStr = "";
@@ -166,23 +179,23 @@ export const generateSEO = async (productName: string, description: string): Pro
 };
 
 // Search for real image URLs
-export const findProductImage = async (modelName: string): Promise<string[]> => {
-    // Only Google Provider supports Grounding tools directly via SDK in this manner
-    // For other providers, we would need a different search tool implementation (e.g. SerpApi)
-    // For now, we fallback to placeholders if not using Google or if error occurs.
-    
+export const findProductImage = async (query: string): Promise<string[]> => {
     if (APP_CONFIG.aiProvider !== 'google') {
         console.warn("Image fetching requires Google Provider for Search Grounding.");
         return [];
     }
 
     try {
-        // FIX: Use gemini-2.5-flash which has broad availability for Search Grounding
+        // Query adjusted to get more variety for selection
         const response = await googleAI.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: `Find 3 high-quality, official promotional image URLs for the smartphone: "${modelName}". 
-            Prefer pure white backgrounds. 
-            Do NOT generate a description. 
+            contents: `Find 10 distinct, high-quality public image URLs for: "${query}".
+            Include a mix of:
+            1. Official marketing renders (white background).
+            2. Lifestyle shots.
+            3. Specific color variants if mentioned in query.
+            4. Back and side views.
+            
             Return ONLY a raw JSON array of strings: ["url1", "url2", "url3"].`,
             config: {
                 tools: [{ googleSearch: {} }]
@@ -191,36 +204,42 @@ export const findProductImage = async (modelName: string): Promise<string[]> => 
 
         let urls: string[] = [];
         
-        // Strategy 1: Extract from Grounding Metadata (Best for Flash)
+        // Strategy 1: Grounding Metadata
         if (response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
             response.candidates[0].groundingMetadata.groundingChunks.forEach((chunk: any) => {
-                if (chunk.web?.uri && (chunk.web.uri.match(/\.(jpg|png|webp|jpeg)$/i))) {
-                    urls.push(chunk.web.uri);
+                if (chunk.web?.uri) {
+                    const uri = chunk.web.uri;
+                    if (uri.match(/\.(jpg|png|webp|jpeg)(\?.*)?$/i) || uri.includes('images') || uri.includes('photo')) {
+                        urls.push(uri);
+                    }
                 }
             });
         }
         
-        // Strategy 2: Parse text if model outputted JSON despite grounding
-        if (urls.length === 0 && response.text) {
+        // Strategy 2: Parse text
+        if (response.text) {
              try {
                 const cleaned = response.text.replace(/```json/g, '').replace(/```/g, '').trim();
-                const parsed = JSON.parse(cleaned);
-                if (Array.isArray(parsed)) {
-                    urls = parsed.filter(u => typeof u === 'string' && u.startsWith('http'));
+                const match = cleaned.match(/\[.*\]/s);
+                if (match) {
+                    const parsed = JSON.parse(match[0]);
+                    if (Array.isArray(parsed)) {
+                        urls = [...urls, ...parsed.filter(u => typeof u === 'string' && u.startsWith('http'))];
+                    }
                 }
              } catch (e) {
-                 // Ignore parsing error
+                 const urlRegex = /(https?:\/\/[^\s"']+\.(?:jpg|jpeg|png|webp))/gi;
+                 const matches = response.text.match(urlRegex);
+                 if (matches) {
+                     urls = [...urls, ...matches];
+                 }
              }
         }
         
-        return Array.from(new Set(urls)).slice(0, 5);
+        // Return more results for selection
+        return Array.from(new Set(urls)).slice(0, 12);
     } catch (error: any) {
-        // Handle 403 or other permission errors gracefully
-        if (error.message && (error.message.includes('403') || error.message.includes('PERMISSION_DENIED'))) {
-             console.warn("Search Grounding permission denied. Ensure API key has access to Google Search tool. Returning empty list.");
-        } else {
-             console.error("Error fetching images:", error);
-        }
+        console.error("Error fetching images:", error);
         return [];
     }
 };
@@ -255,20 +274,42 @@ export const searchMobileModels = async (query: string): Promise<Array<{model: s
 export const fetchPhoneSpecs = async (modelName: string): Promise<Partial<Product> | null> => {
     const prompt = `
         Extract FULL technical specs for: "${modelName}".
-        Return JSON object matching this structure EXACTLY:
+        Organize them EXACTLY like GSMArena standard categories.
+        
+        Required Categories:
+        - Network (Technology, Bands)
+        - Launch (Announced, Status)
+        - Body (Dimensions, Weight, Build, SIM)
+        - Display (Type, Size, Resolution, Protection)
+        - Platform (OS, Chipset, CPU, GPU)
+        - Memory (Card slot, Internal)
+        - Main Camera (Modules, Features, Video)
+        - Selfie Camera (Modules, Features, Video)
+        - Sound (Loudspeaker, 3.5mm jack)
+        - Comms (WLAN, Bluetooth, GPS, NFC, USB)
+        - Features (Sensors)
+        - Battery (Type, Charging)
+        - Misc (Colors, Models)
+
+        Output strictly valid JSON.
+        Structure:
         {
             "brand": "String",
             "price": Number (KWD estimate),
-            "description": "Marketing text",
+            "description": "Marketing text (150 chars)",
             "colors": ["Color1", "Color2"],
             "storageOptions": ["128GB", "256GB"],
             "specs": {
-                "Screen": "...", "Processor": "...", "Ram": "...", "Storage": "...", 
-                "Camera": "...", "Battery": "..."
+                "Network": { "Technology": "..." },
+                "Display": { "Type": "...", "Size": "...", "Resolution": "..." },
+                "Platform": { "OS": "...", "Chipset": "..." },
+                "Memory": { "Internal": "..." },
+                "Main Camera": { "Modules": "...", "Video": "..." },
+                "Battery": { "Type": "...", "Charging": "..." }
+                // ... include all other categories
             },
             "seo": { "metaTitle": "...", "metaDescription": "...", "keywords": [] }
         }
-        Return ONLY JSON.
     `;
 
     try {
@@ -284,7 +325,11 @@ export const fetchPhoneSpecs = async (modelName: string): Promise<Partial<Produc
              text = await sendMessageToGemini(prompt);
              text = text.replace(/```json/g, '').replace(/```/g, '').trim();
         }
-        return JSON.parse(text);
+        
+        // Validation check
+        const parsed = JSON.parse(text);
+        if (!parsed.brand && !parsed.specs) return null;
+        return parsed;
     } catch (error) {
         console.error("Error generating specs:", error);
         return null;

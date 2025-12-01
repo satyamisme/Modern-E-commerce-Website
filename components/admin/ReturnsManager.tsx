@@ -1,5 +1,4 @@
 
-
 import React from 'react';
 import { useShop } from '../../context/ShopContext';
 import { RefreshCcw, CheckCircle, XCircle, Clock, Package } from 'lucide-react';
@@ -76,14 +75,22 @@ export const ReturnsManager: React.FC = () => {
                             {req.status === 'Pending' && (
                                <div className="flex items-center justify-end gap-2">
                                   <button 
-                                     onClick={() => updateReturnStatus(req.id, 'Approved')}
+                                     onClick={() => {
+                                         if(confirm('Approve return? Order status will be updated to Returned.')) {
+                                             updateReturnStatus(req.id, 'Approved');
+                                         }
+                                     }}
                                      className="p-1.5 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-colors"
                                      title="Approve Refund"
                                   >
                                      <CheckCircle size={18}/>
                                   </button>
                                   <button 
-                                     onClick={() => updateReturnStatus(req.id, 'Rejected')}
+                                     onClick={() => {
+                                         if(confirm('Reject return request?')) {
+                                             updateReturnStatus(req.id, 'Rejected');
+                                         }
+                                     }}
                                      className="p-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
                                      title="Reject Request"
                                   >
