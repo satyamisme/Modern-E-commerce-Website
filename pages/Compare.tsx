@@ -23,7 +23,7 @@ export const Compare: React.FC = () => {
   }
 
   // Collect all unique spec keys
-  const allSpecKeys = Array.from(new Set(compareList.flatMap(p => Object.keys(p.specs))));
+  const allSpecKeys = Array.from(new Set(compareList.flatMap(p => Object.keys(p.specs)))) as string[];
 
   return (
     <div className="min-h-screen bg-gray-50 py-12">

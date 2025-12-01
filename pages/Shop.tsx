@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { PRODUCTS } from '../data/products';
@@ -34,8 +35,8 @@ export const Shop: React.FC = () => {
     }
   }, [searchParams]);
 
-  const categories = ['All', ...Array.from(new Set(products.map(p => p.category)))];
-  const brands = Array.from(new Set(products.map(p => p.brand)));
+  const categories = ['All', ...Array.from(new Set(products.map(p => p.category)))] as string[];
+  const brands = Array.from(new Set(products.map(p => p.brand))) as string[];
 
   // Helper to get counts
   const getCount = (type: 'category' | 'brand', value: string) => {

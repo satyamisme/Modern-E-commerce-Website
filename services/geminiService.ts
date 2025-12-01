@@ -2,13 +2,47 @@
 import { GoogleGenAI, Chat, GenerateContentResponse } from "@google/genai";
 import { Product } from "../types";
 import { PRODUCTS } from "../data/products";
+import { APP_CONFIG } from "../config";
 
-// Initialize Gemini
-// Note: process.env.API_KEY is assumed to be available as per instructions.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// --- GOOGLE SDK SETUP ---
+// Note: process.env.API_KEY is assumed to be available.
+const googleAI = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
+// --- OPENAI COMPATIBLE FETCH (Grok, DeepSeek, Perplexity, OpenAI) ---
+// This allows using any standard LLM API by changing the base URL in config.
+async function fetchOpenAICompatible(
+  endpoint: string, 
+  apiKey: string, 
+  modelName: string, 
+  messages: any[], 
+  temperature = 0.7
+): Promise<string> {
+  try {
+    const response = await fetch(`${endpoint}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: modelName,
+        messages: messages,
+        temperature: temperature,
+        max_tokens: 1000
+      })
+    });
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || "";
+  } catch (error) {
+    console.error("AI API Error:", error);
+    return "";
+  }
+}
+
+// --- SYSTEM PROMPT ---
 const SYSTEM_INSTRUCTION = `
-You are "Lakki", an expert AI sales assistant for LAKKI PHONES in Kuwait.
+You are "Lumi", an expert AI sales assistant for LAKKI PHONES in Kuwait.
 We sell premium mobile phones and electronics.
 Our current Inventory is: ${JSON.stringify(PRODUCTS.map(p => ({ 
   name: p.name, 
@@ -25,40 +59,86 @@ Your goal is to help customers find the perfect phone, compare models, and answe
 - If asked about phones we don't sell, politely mention we focus on our curated collection.
 `;
 
-let chatSession: Chat | null = null;
-
-export const getChatSession = (): Chat => {
-  if (!chatSession) {
-    chatSession = ai.chats.create({
-      model: 'gemini-2.5-flash',
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-      },
-    });
-  }
-  return chatSession;
-};
+// --- MAIN SERVICE METHODS ---
 
 export const sendMessageToGemini = async (message: string): Promise<string> => {
   try {
-    const chat = getChatSession();
-    const response: GenerateContentResponse = await chat.sendMessage({ message });
-    return response.text || "I'm having trouble connecting to the network right now.";
+    const apiKey = process.env.API_KEY || '';
+    
+    // 1. Google Gemini (Default)
+    if (APP_CONFIG.aiProvider === 'google') {
+        const chat = googleAI.chats.create({
+            model: 'gemini-2.5-flash',
+            config: { systemInstruction: SYSTEM_INSTRUCTION },
+        });
+        const response: GenerateContentResponse = await chat.sendMessage({ message });
+        return response.text || "I'm having trouble connecting right now.";
+    }
+
+    // 2. Grok (xAI)
+    if (APP_CONFIG.aiProvider === 'grok') {
+        return await fetchOpenAICompatible(
+            APP_CONFIG.aiEndpoints.grok,
+            apiKey,
+            'grok-beta',
+            [{ role: 'system', content: SYSTEM_INSTRUCTION }, { role: 'user', content: message }]
+        );
+    }
+
+    // 3. DeepSeek
+    if (APP_CONFIG.aiProvider === 'deepseek') {
+        return await fetchOpenAICompatible(
+            APP_CONFIG.aiEndpoints.deepseek,
+            apiKey,
+            'deepseek-chat',
+            [{ role: 'system', content: SYSTEM_INSTRUCTION }, { role: 'user', content: message }]
+        );
+    }
+
+    // 4. Perplexity
+    if (APP_CONFIG.aiProvider === 'perplexity') {
+        return await fetchOpenAICompatible(
+            APP_CONFIG.aiEndpoints.perplexity,
+            apiKey,
+            'sonar-medium-online',
+            [{ role: 'system', content: SYSTEM_INSTRUCTION }, { role: 'user', content: message }]
+        );
+    }
+    
+    // 5. OpenAI
+    if (APP_CONFIG.aiProvider === 'openai') {
+        return await fetchOpenAICompatible(
+            APP_CONFIG.aiEndpoints.openai,
+            apiKey,
+            'gpt-4o',
+            [{ role: 'system', content: SYSTEM_INSTRUCTION }, { role: 'user', content: message }]
+        );
+    }
+
+    return "AI Provider not configured correctly.";
+
   } catch (error) {
-    console.error("Gemini Chat Error:", error);
-    return "I'm sorry, I encountered an error while processing your request. Please try again.";
+    console.error("Chat Error:", error);
+    return "I'm sorry, I encountered an error while processing your request.";
   }
 };
 
 export const generateProductReview = async (product: Product): Promise<string> => {
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: `Write a short, engaging, 3-sentence expert summary review for the ${product.name}. 
+    const prompt = `Write a short, engaging, 3-sentence expert summary review for the ${product.name}. 
       Highlight its key feature: ${product.specs['Main Camera'] || product.specs.camera || 'Performance'}. 
-      End with a recommendation on who should buy it.`,
-    });
-    return response.text || "Review unavailable.";
+      End with a recommendation on who should buy it.`;
+
+    if (APP_CONFIG.aiProvider === 'google') {
+        const response = await googleAI.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+        });
+        return response.text || "Review unavailable.";
+    }
+    
+    return await sendMessageToGemini(prompt);
+
   } catch (error) {
     console.error("Gemini Review Error:", error);
     return "Could not generate review at this time.";
@@ -68,54 +148,59 @@ export const generateProductReview = async (product: Product): Promise<string> =
 export const generateSEO = async (productName: string, description: string): Promise<{ metaTitle: string, metaDescription: string, keywords: string[] } | null> => {
     try {
         const prompt = `
-            Act as an E-commerce SEO Expert & Copywriter.
-            Generate high-converting, sales-driven SEO metadata for: "${productName}".
-            Description context: "${description.substring(0, 500)}..."
+            Act as an E-commerce SEO Expert.
+            Generate JSON metadata for: "${productName}".
+            Description: "${description.substring(0, 300)}..."
 
-            Requirements:
-            1. Meta Title: Catchy, includes main keyword, under 60 chars.
-            2. Meta Description: Persuasive, includes USPs (like 'Free Shipping', 'Official Warranty', 'Best Price in Kuwait'), under 160 chars.
-            3. Keywords: 5-8 relevant, high-traffic keywords for Kuwait/Middle East market if applicable.
-
-            Return ONLY a valid JSON object:
+            Format:
             {
-                "metaTitle": "Title",
-                "metaDescription": "Description",
-                "keywords": ["keyword1", "keyword2"]
+                "metaTitle": "Title under 60 chars",
+                "metaDescription": "Description under 160 chars with USP",
+                "keywords": ["5-8 keywords"]
             }
+            Return ONLY raw JSON.
         `;
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: { responseMimeType: 'application/json' }
-        });
 
-        const text = response.text || "{}";
-        return JSON.parse(text);
+        let jsonStr = "";
+
+        if (APP_CONFIG.aiProvider === 'google') {
+            const response = await googleAI.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: prompt,
+                config: { responseMimeType: 'application/json' }
+            });
+            jsonStr = response.text || "{}";
+        } else {
+            jsonStr = await sendMessageToGemini(prompt + " Do not use markdown formatting. Just JSON.");
+            jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
+        }
+
+        return JSON.parse(jsonStr);
     } catch (e) {
         console.error("SEO Gen Error", e);
         return null;
     }
 };
 
-// Search for real image URLs using Google Search Grounding
+// Search for real image URLs
 export const findProductImage = async (modelName: string): Promise<string[]> => {
+    if (APP_CONFIG.aiProvider !== 'google') {
+        console.warn("Image fetching requires Google Provider for Search Grounding. Returning placeholders.");
+        return [];
+    }
+
     try {
-        // Use gemini-2.5-flash as it reliably supports the googleSearch tool for this purpose
-        const response = await ai.models.generateContent({
+        const response = await googleAI.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: `Find 3 high-quality, official promotional image URLs for the smartphone: "${modelName}". 
-            Prefer pure white backgrounds if possible.
-            Return ONLY a raw JSON array of strings. Example: ["https://site.com/img1.jpg", "https://site.com/img2.jpg"]`,
+            Prefer pure white backgrounds. Return ONLY a raw JSON array of strings.`,
             config: {
                 tools: [{ googleSearch: {} }]
-                // Note: responseMimeType: 'application/json' is NOT allowed with googleSearch
             }
         });
 
         let urls: string[] = [];
         
-        // 1. Check grounding chunks (Best source for real URLs found by search)
         if (response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
             response.candidates[0].groundingMetadata.groundingChunks.forEach((chunk: any) => {
                 if (chunk.web?.uri && (chunk.web.uri.match(/\.(jpg|png|webp|jpeg)$/i))) {
@@ -123,113 +208,79 @@ export const findProductImage = async (modelName: string): Promise<string[]> => 
                 }
             });
         }
-
-        // 2. Fallback: Parse text if it returned a JSON array in the text
-        if (response.text) {
-            try {
-                // Robust parsing: strip markdown and find JSON array
-                let text = response.text;
-                text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-                
-                const start = text.indexOf('[');
-                const end = text.lastIndexOf(']');
-                
-                if (start !== -1 && end !== -1) {
-                    const jsonStr = text.substring(start, end + 1);
-                    const jsonUrls = JSON.parse(jsonStr);
-                    if (Array.isArray(jsonUrls)) {
-                        const validUrls = jsonUrls.filter((u: string) => typeof u === 'string' && u.startsWith('http'));
-                        urls.push(...validUrls);
-                    }
-                }
-            } catch (e) {
-               console.warn("Failed to parse image JSON fallback", e);
-            }
-        }
-
-        // De-duplicate URLs
+        
         return Array.from(new Set(urls));
-    } catch (error) {
-        console.error("Error fetching images:", error);
+    } catch (error: any) {
+        // Handle 403 or other permission errors gracefully
+        if (error.message && (error.message.includes('403') || error.message.includes('PERMISSION_DENIED'))) {
+             console.warn("Search Grounding permission denied. Ensure API key has access to Google Search tool.");
+        } else {
+             console.error("Error fetching images:", error);
+        }
         return [];
     }
 };
 
-// Autocomplete Model Suggestions
 export const searchMobileModels = async (query: string): Promise<Array<{model: string, brand: string, variants: string[], year: string}>> => {
+    const prompt = `
+        User input: "${query}"
+        Return a JSON array of 5 likely mobile phone models matching this.
+        Format: [{ "model": "Name", "brand": "Brand", "variants": ["128GB"], "year": "2024" }]
+        Return ONLY JSON.
+    `;
+    
     try {
-        const prompt = `
-            User input: "${query}"
-            Return a JSON array of 5 likely mobile phone models that match this input.
-            Include specific variant details (storage/ram) if common.
-            
-            Format:
-            [
-                { "model": "Full Model Name", "brand": "Brand", "variants": ["128GB", "256GB"], "year": "2024" }
-            ]
-        `;
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: { responseMimeType: 'application/json' }
-        });
-        
-        let text = response.text || "[]";
+        let text = "";
+        if (APP_CONFIG.aiProvider === 'google') {
+            const response = await googleAI.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: prompt,
+                config: { responseMimeType: 'application/json' }
+            });
+            text = response.text || "[]";
+        } else {
+            text = await sendMessageToGemini(prompt);
+            text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        }
         return JSON.parse(text);
     } catch (e) {
         return [];
     }
 };
 
-// Exhaustive Specs Fetcher (GSM Arena Style)
 export const fetchPhoneSpecs = async (modelName: string): Promise<Partial<Product> | null> => {
+    const prompt = `
+        Extract FULL technical specs for: "${modelName}".
+        Return JSON object matching this structure EXACTLY:
+        {
+            "brand": "String",
+            "price": Number (KWD estimate),
+            "description": "Marketing text",
+            "colors": ["Color1", "Color2"],
+            "storageOptions": ["128GB", "256GB"],
+            "specs": {
+                "Screen": "...", "Processor": "...", "Ram": "...", "Storage": "...", 
+                "Camera": "...", "Battery": "..."
+            },
+            "seo": { "metaTitle": "...", "metaDescription": "...", "keywords": [] }
+        }
+        Return ONLY JSON.
+    `;
+
     try {
-        const prompt = `
-            Act as a GSMArena specification scraper. 
-            I need the FULL technical specs for: "${modelName}".
-            
-            Return ONLY a valid JSON object. No markdown.
-            
-            Structure the "specs" object EXACTLY with these groups:
-            {
-                "brand": "String",
-                "category": "Smartphones",
-                "price": Number (Estimate KWD),
-                "description": "Sales description",
-                "colors": ["Array", "of", "Colors"],
-                "specs": {
-                    "Network": { "Technology": "...", "2G bands": "...", "3G bands": "...", "4G bands": "...", "5G bands": "...", "Speed": "..." },
-                    "Launch": { "Announced": "...", "Status": "..." },
-                    "Body": { "Dimensions": "...", "Weight": "...", "Build": "...", "SIM": "..." },
-                    "Display": { "Type": "...", "Size": "...", "Resolution": "...", "Protection": "..." },
-                    "Platform": { "OS": "...", "Chipset": "...", "CPU": "...", "GPU": "..." },
-                    "Memory": { "Card slot": "...", "Internal": "..." },
-                    "Main Camera": { "Modules": "...", "Features": "...", "Video": "..." },
-                    "Selfie Camera": { "Modules": "...", "Features": "...", "Video": "..." },
-                    "Sound": { "Loudspeaker": "...", "3.5mm jack": "..." },
-                    "Comms": { "WLAN": "...", "Bluetooth": "...", "Positioning": "...", "NFC": "...", "Radio": "...", "USB": "..." },
-                    "Features": { "Sensors": "..." },
-                    "Battery": { "Type": "...", "Charging": "..." },
-                    "Misc": { "Colors": "...", "Models": "...", "SAR": "..." }
-                },
-                "seo": {
-                    "metaTitle": "SEO Title",
-                    "metaDescription": "SEO Description",
-                    "keywords": ["keyword1", "keyword2"]
-                }
-            }
-        `;
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: { responseMimeType: 'application/json' }
-        });
-
-        const text = response.text || "{}";
-        const data = JSON.parse(text);
-        
-        return data;
+        let text = "";
+        if (APP_CONFIG.aiProvider === 'google') {
+            const response = await googleAI.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: prompt,
+                config: { responseMimeType: 'application/json' }
+            });
+            text = response.text || "{}";
+        } else {
+             text = await sendMessageToGemini(prompt);
+             text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        }
+        return JSON.parse(text);
     } catch (error) {
         console.error("Error generating specs:", error);
         return null;

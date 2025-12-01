@@ -1,57 +1,98 @@
 
-# LAKKI PHONES - Application Guide
+# LAKKI PHONES - Ultimate Developer Guide
 
-Welcome to the LAKKI PHONES e-commerce platform. This guide helps developers and admins understand the architecture, data management, and AI features.
+**Version**: 2.0 (Multi-Provider AI Supported)
 
-## 🚀 Getting Started
-
-### 1. Configuration
-The application behavior is controlled by `config.ts`.
-- **`useMockData`**: Set to `true` to load sample products (iPhones, Samsungs, etc.) on first load. Set to `false` to start with an empty inventory for real-world testing.
-- **`storeName`**: Update your store branding here.
-
-### 2. Admin Access
-To access the Admin Dashboard:
-- **URL**: `/admin` (or click "Log In" then "Quick Admin Login" for testing)
-- **Super Admin**: `ahmed@lakkiphones.com` / `admin123`
-
-### 3. Real Data Testing
-To switch to real data:
-1. Open `config.ts`.
-2. Set `useMockData: false`.
-3. Clear your browser's Local Storage (Application tab in DevTools) to remove any cached mock data.
-4. Refresh the page. The store will be empty.
-5. Go to Admin Dashboard -> Products -> Add Product.
-6. Use the **AI Auto-Fill** features to quickly populate your real inventory.
+Welcome to the LAKKI PHONES platform! This guide covers everything from setting up multiple AI providers to managing inventory.
 
 ---
 
-## 🤖 AI Features (Gemini Powered)
+## 🚀 1. Quick Start
 
-### Product Manager (Admin)
-- **Fetch Specs**: Enter a model name (e.g., "iPhone 15 Pro") and click "Auto-Fill". The AI acts as a GSMArena scraper to fill technical specs.
-- **Fetch Images**: Click "Media" -> "Fetch from Web". The AI uses Google Search Grounding to find real image URLs.
-- **AI SEO**: Click "SEO" -> "Generate with AI" to create high-converting meta titles and descriptions.
-- **Variant Matrix**: Use the "Attribute Builder" to define colors/storage, then click "Generate Matrix" to create all SKU combinations instantly.
+### Configuration
+The file `config.ts` is the control center for the application.
 
-### Shopping Assistant (User)
-- **Lumi Chat**: Click the sparkle icon bottom-right. Ask questions like "Compare iPhone 15 and S24" or "Best phone under 200 KWD".
+- **Toggle Real/Mock Data**: 
+  Change `useMockData: true` to `false` to start with an empty inventory for production.
+
+- **Switch AI Provider**:
+  Change `aiProvider` to `'google'`, `'grok'`, `'deepseek'`, etc.
+
+### Prerequisites
+- Node.js 18+
+- An API Key for your chosen AI Provider.
 
 ---
 
-## 📂 Project Structure
+## 🤖 2. Multi-Provider AI Setup
 
-- **`components/admin/`**: Dashboard widgets (Product Manager, Order Kanban, etc.).
-- **`services/geminiService.ts`**: All AI logic. Handles 403 errors by using `gemini-2.5-flash` for search grounding.
-- **`context/ShopContext.tsx`**: Central state management (Cart, User, Products). Persistence via LocalStorage.
-- **`data/products.ts`**: The mock data source (only used if `useMockData` is true).
+LAKKI PHONES supports **any OpenAI-compatible LLM** plus Google Gemini Native.
 
-## 🛠 Troubleshooting
+### Supported Providers & Setup
 
-**Error: Permission Denied (403) when fetching images**
-- This occurs if the API key does not have access to `gemini-3-pro-image-preview` or the `googleSearch` tool.
-- **Fix**: The code has been updated to use `gemini-2.5-flash` which generally has broader access to tools. Ensure your API Key is valid and has billing enabled if required for search tools.
+1.  **Google Gemini** (Default)
+    *   **Best For**: Image Search, Fast Text, Multimodal.
+    *   **Key**: [aistudio.google.com](https://aistudio.google.com/)
+    *   **Config**: `aiProvider: 'google'`
 
-**Data not saving?**
-- The app uses `localStorage` for persistence. If you clear cache, data is lost. For production, connect `ShopContext` to a real backend (Supabase/Firebase).
+2.  **Grok (xAI)**
+    *   **Best For**: Real-time knowledge (if available via API), witty descriptions.
+    *   **Key**: [console.x.ai](https://console.x.ai/)
+    *   **Config**: `aiProvider: 'grok'`
+
+3.  **DeepSeek**
+    *   **Best For**: Coding logic, structured JSON generation, cost-efficiency.
+    *   **Key**: [platform.deepseek.com](https://platform.deepseek.com/)
+    *   **Config**: `aiProvider: 'deepseek'`
+
+4.  **Perplexity (Sonar)**
+    *   **Best For**: Live internet search for specs and pricing.
+    *   **Key**: [perplexity.ai](https://www.perplexity.ai/)
+    *   **Config**: `aiProvider: 'perplexity'`
+
+### Environment Variables
+Ensure your environment has the API key set. The app uses `process.env.API_KEY` for the selected provider.
+
+```env
+API_KEY=your_secret_key_here
+```
+
+---
+
+## 🛠 3. Admin Dashboard Workflow
+
+Access via `/admin`.
+
+### adding a New Product with AI
+1.  Click **"+ Add Product"**.
+2.  Enter the **Model Name** (e.g., "Samsung S24 Ultra").
+3.  **Auto-Fill Specs**: Go to the *Specifications* tab and click "Auto-Fill Specs". The AI will fetch technical details.
+4.  **Generate Variants**:
+    *   Go to *Variants & Stock*.
+    *   Add Colors (e.g., "Titanium Gray") and Storage options.
+    *   Click **"Generate Matrix"**.
+5.  **Smart Modifiers**: Use the bulk tool to set price rules (e.g., "Increase Price by 20 for 512GB").
+6.  **SEO**: Go to *SEO* tab and click "Generate with AI" for meta tags.
+
+### Managing Inventory
+- Go to the **Inventory** tab to see stock levels across 8 warehouses/shops.
+- Click "Transfer" to initiate stock movement (UI only).
+
+---
+
+## 🎨 4. Customization
+
+### Theming
+The app uses Tailwind CSS. Colors are defined in `index.html` under `tailwind.config`.
+- `primary`: Navy Blue (Brand)
+- `secondary`: Gold (Luxury/Heritage)
+- `accent`: Coral Red (Action)
+
+### Animations
+Custom keyframes (`fade-in`, `slide-up`, `zoom-in`) are defined in `index.html`.
+
+---
+
+## 📱 5. Mobile & PWA
+The app is fully responsive. The `BottomNav` component appears only on mobile screens.
 
