@@ -29,7 +29,7 @@ export const InventoryManager: React.FC = () => {
                    </span>
                 </div>
                 <h3 className="font-bold text-gray-900 text-lg">{wh.name}</h3>
-                <p className="text-sm text-gray-500 mb-4">{wh.location}</p>
+                <p className="text-sm text-gray-500 mb-4">{wh.location.address}</p>
                 <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden mb-2">
                    <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${wh.utilization}%` }}></div>
                 </div>

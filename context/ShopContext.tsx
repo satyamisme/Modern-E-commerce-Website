@@ -15,17 +15,100 @@ const DEFAULT_SETTINGS: AppSettings = {
   freeShippingThreshold: 50
 };
 
-// 1 Main Warehouse + 8 Retail Shops
+// 1 Main Warehouse + 8 Retail Shops (Real Locations)
 const INITIAL_WAREHOUSES: Warehouse[] = [
-  { id: 'WH-MAIN', name: 'Shuwaikh Central Hub', location: 'Shuwaikh Industrial', capacity: 50000, utilization: 85, type: 'Main Warehouse' },
-  { id: 'SH-01', name: 'The Avenues Store', location: 'Al Rai', capacity: 2000, utilization: 65, type: 'Retail Shop' },
-  { id: 'SH-02', name: '360 Mall Store', location: 'Zahra', capacity: 1500, utilization: 50, type: 'Retail Shop' },
-  { id: 'SH-03', name: 'Marina Mall Store', location: 'Salmiya', capacity: 1800, utilization: 70, type: 'Retail Shop' },
-  { id: 'SH-04', name: 'Al Kout Mall Store', location: 'Fahaheel', capacity: 1500, utilization: 45, type: 'Retail Shop' },
-  { id: 'SH-05', name: 'Gate Mall Store', location: 'Egaila', capacity: 1200, utilization: 60, type: 'Retail Shop' },
-  { id: 'SH-06', name: 'Assima Mall Store', location: 'Kuwait City', capacity: 1600, utilization: 55, type: 'Retail Shop' },
-  { id: 'SH-07', name: 'Promenade Store', location: 'Hawalli', capacity: 1000, utilization: 40, type: 'Retail Shop' },
-  { id: 'SH-08', name: 'Al Hamra Tower Store', location: 'Sharq', capacity: 800, utilization: 30, type: 'Retail Shop' },
+  { 
+    id: 'WH-MAIN-SHU', 
+    name: 'Shuwaikh Central Hub', 
+    location: { address: 'Shuwaikh Industrial Area 1, Block 3' }, 
+    capacity: 50000, 
+    utilization: 85, 
+    type: 'Main Warehouse',
+    managerId: 'mgr-shuwaikh',
+    phone: '+965 50430610',
+    openingHours: '24/7'
+  },
+  { 
+    id: 'SH-SAL-01', 
+    name: 'Salmiya Flagship', 
+    location: { address: 'Al Salam Mall, Salmiya' }, 
+    capacity: 2000, 
+    utilization: 65, 
+    type: 'Retail Shop',
+    managerId: 'mgr-salmiya',
+    phone: '+965 55463597'
+  },
+  { 
+    id: 'SH-KHA-02', 
+    name: 'Khaitan HQ Store', 
+    location: { address: 'Fahd Al-Dabbous Mall, Khaitan' }, 
+    capacity: 1500, 
+    utilization: 50, 
+    type: 'Retail Shop',
+    managerId: 'mgr-khaitan',
+    phone: '+965 50430606'
+  },
+  { 
+    id: 'SH-FAH-03', 
+    name: 'Fahaheel Branch', 
+    location: { address: 'The Avenues Phase 4, Fahaheel' }, 
+    capacity: 1800, 
+    utilization: 70, 
+    type: 'Retail Shop',
+    managerId: 'mgr-fahaheel',
+    phone: '+965 55463598'
+  },
+  { 
+    id: 'SH-HAW-04', 
+    name: 'Hawally Center', 
+    location: { address: 'Mubarak Al-Kabeer St, Hawally' }, 
+    capacity: 1500, 
+    utilization: 45, 
+    type: 'Retail Shop',
+    managerId: 'mgr-hawally',
+    phone: '+965 50430607'
+  },
+  { 
+    id: 'SH-MUB-05', 
+    name: 'Mubarak Al-Kabeer', 
+    location: { address: 'Mubarak Al-Kabeer Co-op' }, 
+    capacity: 1200, 
+    utilization: 60, 
+    type: 'Retail Shop',
+    managerId: 'mgr-mubarak',
+    phone: '+965 55463599'
+  },
+  { 
+    id: 'SH-JAH-06', 
+    name: 'Al Jahra Store', 
+    location: { address: 'Al Jahra Commercial Area' }, 
+    capacity: 1600, 
+    utilization: 55, 
+    type: 'Retail Shop',
+    managerId: 'mgr-jahra',
+    phone: '+965 50430608'
+  },
+  { 
+    id: 'SH-FAR-07', 
+    name: 'Farwaniya Pop-up', 
+    location: { address: 'Farwaniya Co-op Mall' }, 
+    capacity: 1000, 
+    utilization: 40, 
+    type: 'Retail Shop',
+    managerId: 'mgr-farwaniya',
+    phone: '+965 55463600'
+  },
+  { 
+    id: 'SH-ONL-08', 
+    name: 'Online Fulfillment', 
+    location: { address: 'Shuwaikh Industrial Area 2' }, 
+    capacity: 5000, 
+    utilization: 30, 
+    type: 'Online Fulfillment',
+    managerId: 'mgr-online',
+    phone: '+965 50430609',
+    openingHours: '24/7'
+  },
 ];
 
 const INITIAL_ROLES: RoleDefinition[] = [
@@ -33,30 +116,41 @@ const INITIAL_ROLES: RoleDefinition[] = [
     id: 'role-super', 
     name: 'Super Admin', 
     isSystem: true,
-    permissions: ['manage_products', 'manage_orders', 'manage_inventory', 'manage_users', 'manage_roles', 'view_reports', 'manage_settings'] 
+    description: 'Full system access',
+    permissions: ['all'] 
   },
   { 
-    id: 'role-admin', 
-    name: 'Admin', 
+    id: 'role-shop-admin', 
+    name: 'Shop Admin', 
     isSystem: true,
-    permissions: ['manage_products', 'manage_orders', 'manage_inventory', 'view_reports'] 
+    description: 'Manage specific store operations',
+    permissions: ['manage_orders', 'manage_inventory', 'view_reports', 'manage_customers'] 
   },
   { 
     id: 'role-sales', 
     name: 'Sales', 
     isSystem: true,
-    permissions: ['manage_orders', 'view_reports'] 
+    description: 'POS and basic order handling',
+    permissions: ['manage_orders', 'view_products'] 
+  },
+  { 
+    id: 'role-warehouse', 
+    name: 'Warehouse Staff', 
+    isSystem: true,
+    description: 'Inventory and stock transfer',
+    permissions: ['manage_inventory'] 
   }
 ];
 
 const AVAILABLE_PERMISSIONS: Permission[] = [
-  { id: 'p1', label: 'Manage Products', key: 'manage_products' },
-  { id: 'p2', label: 'Manage Orders', key: 'manage_orders' },
-  { id: 'p3', label: 'Manage Inventory', key: 'manage_inventory' },
-  { id: 'p4', label: 'Manage Users', key: 'manage_users' },
-  { id: 'p5', label: 'Manage Roles', key: 'manage_roles' },
-  { id: 'p6', label: 'View Reports', key: 'view_reports' },
-  { id: 'p7', label: 'System Settings', key: 'manage_settings' },
+  { id: 'p1', label: 'Full Access', key: 'all', description: 'Grant all permissions' },
+  { id: 'p2', label: 'Manage Products', key: 'manage_products', description: 'Create, edit, delete products' },
+  { id: 'p3', label: 'Manage Orders', key: 'manage_orders', description: 'Process and update orders' },
+  { id: 'p4', label: 'Manage Inventory', key: 'manage_inventory', description: 'Stock adjustments and transfers' },
+  { id: 'p5', label: 'Manage Users', key: 'manage_users', description: 'Manage customers and staff' },
+  { id: 'p6', label: 'Manage Roles', key: 'manage_roles', description: 'Create and assign roles' },
+  { id: 'p7', label: 'View Reports', key: 'view_reports', description: 'Access analytics dashboard' },
+  { id: 'p8', label: 'System Settings', key: 'manage_settings', description: 'Configure global app settings' },
 ];
 
 // Mock Customers
@@ -364,13 +458,15 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Auth Logic with Roles
   const login = (email: string) => {
-    // Determine Role
+    // Mock Role Determination based on email
     let role: RoleType = 'User';
     let name = email.split('@')[0];
+    let shopId = undefined;
 
-    if (email === 'super@lakkiphones.com') { role = 'Super Admin'; name = 'Super Admin'; }
-    else if (email === 'admin@lakkiphones.com') { role = 'Admin'; name = 'Admin User'; }
-    else if (email === 'sales@lakkiphones.com') { role = 'Sales'; name = 'Sales Agent'; }
+    if (email.includes('super')) { role = 'Super Admin'; name = 'Super Admin'; }
+    else if (email.includes('admin')) { role = 'Shop Admin'; name = 'Shop Manager'; shopId = 'SH-KHA-02'; }
+    else if (email.includes('sales')) { role = 'Sales'; name = 'Sales Agent'; shopId = 'SH-SAL-01'; }
+    else if (email.includes('warehouse')) { role = 'Warehouse Staff'; name = 'Stock Manager'; shopId = 'WH-MAIN-SHU'; }
 
     setUser({
       id: role !== 'User' ? `staff-${Date.now()}` : 'u-123',
@@ -378,6 +474,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       email: email,
       avatar: `https://ui-avatars.com/api/?name=${name}&background=random`,
       role: role,
+      shopId: shopId,
       addresses: []
     });
     showToast(`Welcome back, ${name}! (${role})`, 'success');
@@ -405,6 +502,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Find role definition
     const roleDef = roles.find(r => r.name === user.role);
     if (!roleDef) return false;
+    if (roleDef.permissions.includes('all')) return true;
     return roleDef.permissions.includes(permissionKey);
   };
 

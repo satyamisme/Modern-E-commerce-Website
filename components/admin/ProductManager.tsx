@@ -75,6 +75,10 @@ export const ProductManager: React.FC = () => {
         } else {
            const prompt = `Generate SEO metadata for "${editingProduct.name}". Return a JSON object with keys: metaTitle, metaDescription, and keywords (comma separated string).`;
            const result = await sendMessageToGemini(prompt);
+           // NOTE: In a real app, parse the JSON from result properly. 
+           // For simplicity in this demo, we mock or trust the text is plain or needs parsing logic.
+           // Since sendMessageToGemini returns a string, we might need a better parser or a dedicated function.
+           // We will use a simple fallback here for safety.
            setEditingProduct(prev => ({ 
               ...prev, 
               seo: { 

@@ -43,6 +43,9 @@ export interface Product {
     sim?: string;
     connectivity?: string;
     sensors?: string;
+    chipset?: string;
+    video?: string;
+    charging?: string;
     [key: string]: string | undefined;
   };
   description: string;
@@ -86,12 +89,13 @@ export interface ToastMessage {
   type: 'success' | 'error' | 'info';
 }
 
-export type RoleType = 'Super Admin' | 'Admin' | 'Sales' | 'User' | string;
+export type RoleType = 'Super Admin' | 'Shop Admin' | 'Sales' | 'Warehouse Staff' | 'User' | string;
 
 export interface Permission {
   id: string;
   label: string;
-  key: 'manage_products' | 'manage_orders' | 'manage_inventory' | 'manage_users' | 'manage_roles' | 'view_reports' | 'manage_settings';
+  key: string;
+  description?: string;
 }
 
 export interface RoleDefinition {
@@ -99,6 +103,7 @@ export interface RoleDefinition {
   name: string;
   permissions: string[]; // Array of permission keys
   isSystem?: boolean; // Cannot be deleted if true
+  description?: string;
 }
 
 export interface User {
@@ -108,6 +113,7 @@ export interface User {
   phone?: string;
   avatar?: string;
   role: RoleType;
+  shopId?: string; // If assigned to a specific shop
   addresses: Address[];
 }
 
@@ -128,10 +134,17 @@ export interface CustomerProfile {
 export interface Warehouse {
   id: string;
   name: string;
-  location: string;
+  location: {
+    lat?: number;
+    lng?: number;
+    address: string;
+  };
   capacity: number;
   utilization: number;
-  type: 'Main Warehouse' | 'Retail Shop';
+  type: 'Main Warehouse' | 'Retail Shop' | 'Online Fulfillment';
+  managerId?: string;
+  phone?: string;
+  openingHours?: string;
 }
 
 export interface Order {
@@ -143,6 +156,7 @@ export interface Order {
   paymentMethod: 'KNET' | 'Credit Card';
   items: CartItem[];
   fraudScore?: number;
+  shopId?: string; // Fulfilled by
   customer: {
     name: string;
     email: string;

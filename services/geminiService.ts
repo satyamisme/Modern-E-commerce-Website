@@ -75,20 +75,21 @@ export const fetchPhoneSpecs = async (modelName: string): Promise<Partial<Produc
             
             The JSON structure must be:
             {
-                "brand": "String (e.g. Apple, Samsung)",
+                "brand": "String (e.g. Apple, Samsung, Xiaomi)",
                 "category": "Smartphones",
                 "price": Number (Estimate in Kuwaiti Dinar KWD, strictly number),
                 "description": "A 2-sentence marketing description.",
                 "specs": {
-                    "screen": "String (e.g. 6.1 inch OLED)",
-                    "processor": "String (e.g. A17 Pro)",
-                    "ram": "String (e.g. 8GB)",
-                    "storage": "String (e.g. 128GB)",
-                    "camera": "String (e.g. 48MP Main)",
-                    "battery": "String (e.g. 3274mAh)",
-                    "os": "String",
+                    "screen": "String (e.g. 6.8 inch Dynamic AMOLED 2X, 120Hz)",
+                    "processor": "String (e.g. Snapdragon 8 Gen 3)",
+                    "ram": "String (e.g. 12GB)",
+                    "storage": "String (e.g. 256GB/512GB/1TB)",
+                    "camera": "String (e.g. 200MP Main + 50MP Periscope)",
+                    "battery": "String (e.g. 5000mAh, 45W Charging)",
+                    "os": "String (e.g. Android 14, One UI 6.1)",
                     "weight": "String",
-                    "dimensions": "String"
+                    "dimensions": "String",
+                    "sim": "String (e.g. Dual SIM + eSIM)"
                 },
                 "tags": ["Array", "of", "strings"]
             }
