@@ -2,12 +2,13 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Product, CartItem, ToastMessage, User, Order, Address, Review, AppSettings, CustomerProfile, Warehouse, RoleDefinition, Permission, RoleType } from '../types';
 import { PRODUCTS as INITIAL_PRODUCTS } from '../data/products';
+import { APP_CONFIG } from '../config';
 
 const DEFAULT_SETTINGS: AppSettings = {
-  storeName: 'LAKKI PHONES',
-  currency: 'KWD',
-  supportEmail: 'support@lakkiphones.com',
-  supportPhone: '1800-LAKKI',
+  storeName: APP_CONFIG.storeName,
+  currency: APP_CONFIG.currency,
+  supportEmail: APP_CONFIG.supportEmail,
+  supportPhone: APP_CONFIG.supportPhone,
   taxRate: 0,
   enableKnet: true,
   enableCreditCard: true,
@@ -226,7 +227,9 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Products State (Persisted)
   const [products, setProducts] = useState<Product[]>(() => {
     const saved = localStorage.getItem('lumina_products');
-    return saved ? JSON.parse(saved) : INITIAL_PRODUCTS;
+    if (saved) return JSON.parse(saved);
+    // Conditional Load based on Config
+    return APP_CONFIG.useMockData ? INITIAL_PRODUCTS : [];
   });
 
   // Cart State
@@ -275,38 +278,47 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [orders, setOrders] = useState<Order[]>(() => {
      const saved = localStorage.getItem('lumina_orders');
      if (saved) return JSON.parse(saved);
-     return [
-       {
-         id: 'ORD-7782-XJ',
-         date: '2023-11-15',
-         total: 1299,
-         status: 'Delivered',
-         paymentStatus: 'Paid',
-         paymentMethod: 'KNET',
-         items: [
-           { ...INITIAL_PRODUCTS[0], quantity: 1 },
-           { ...INITIAL_PRODUCTS[7], quantity: 1 }
-         ],
-         customer: { name: 'John Doe', email: 'john@example.com', phone: '99999999', address: 'Kuwait City' }
-       }
-    ];
+     
+     if (APP_CONFIG.useMockData) {
+        return [
+           {
+             id: 'ORD-7782-XJ',
+             date: '2023-11-15',
+             total: 1299,
+             status: 'Delivered',
+             paymentStatus: 'Paid',
+             paymentMethod: 'KNET',
+             items: [
+               { ...INITIAL_PRODUCTS[0], quantity: 1 },
+               { ...INITIAL_PRODUCTS[7], quantity: 1 }
+             ],
+             customer: { name: 'John Doe', email: 'john@example.com', phone: '99999999', address: 'Kuwait City' }
+           }
+        ];
+     }
+     return [];
   });
 
   // CRM & Inventory State
-  const [customers, setCustomers] = useState<CustomerProfile[]>(INITIAL_CUSTOMERS);
+  const [customers, setCustomers] = useState<CustomerProfile[]>(APP_CONFIG.useMockData ? INITIAL_CUSTOMERS : []);
   const [warehouses, setWarehouses] = useState<Warehouse[]>(INITIAL_WAREHOUSES);
 
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
-  // Live Data Simulator
+  // Live Data Simulator (Only if Mock Data is enabled and products exist)
   useEffect(() => {
+    if (!APP_CONFIG.useMockData || products.length === 0) return;
+
     const interval = setInterval(() => {
       // 10% Chance to simulate a new order
       if (Math.random() > 0.90) {
         const randomProduct = products[Math.floor(Math.random() * products.length)];
         const randomCust = customers[Math.floor(Math.random() * customers.length)];
+        
+        if (!randomProduct || !randomCust) return;
+
         const newOrder: Order = {
           id: `ORD-${Math.floor(Math.random() * 90000)}`,
           date: new Date().toISOString().split('T')[0],
@@ -463,7 +475,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let name = email.split('@')[0];
     let shopId = undefined;
 
-    if (email.includes('super')) { role = 'Super Admin'; name = 'Super Admin'; }
+    if (email.includes('super') || email.includes('ahmed')) { role = 'Super Admin'; name = 'Ahmed (Admin)'; }
     else if (email.includes('admin')) { role = 'Shop Admin'; name = 'Shop Manager'; shopId = 'SH-KHA-02'; }
     else if (email.includes('sales')) { role = 'Sales'; name = 'Sales Agent'; shopId = 'SH-SAL-01'; }
     else if (email.includes('warehouse')) { role = 'Warehouse Staff'; name = 'Stock Manager'; shopId = 'WH-MAIN-SHU'; }

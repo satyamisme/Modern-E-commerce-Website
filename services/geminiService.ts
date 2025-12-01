@@ -74,7 +74,7 @@ export const generateSEO = async (productName: string, description: string): Pro
 
             Requirements:
             1. Meta Title: Catchy, includes main keyword, under 60 chars.
-            2. Meta Description: Persuasive, includes USPs (like 'Free Shipping', 'Official Warranty'), under 160 chars.
+            2. Meta Description: Persuasive, includes USPs (like 'Free Shipping', 'Official Warranty', 'Best Price in Kuwait'), under 160 chars.
             3. Keywords: 5-8 relevant, high-traffic keywords for Kuwait/Middle East market if applicable.
 
             Return ONLY a valid JSON object:
@@ -101,13 +101,15 @@ export const generateSEO = async (productName: string, description: string): Pro
 // Search for real image URLs using Google Search Grounding
 export const findProductImage = async (modelName: string): Promise<string[]> => {
     try {
+        // Use gemini-2.5-flash as it reliably supports the googleSearch tool for this purpose
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash', 
+            model: 'gemini-2.5-flash',
             contents: `Find 3 high-quality, official promotional image URLs for the smartphone: "${modelName}". 
             Prefer pure white backgrounds if possible.
             Return ONLY a raw JSON array of strings. Example: ["https://site.com/img1.jpg", "https://site.com/img2.jpg"]`,
             config: {
                 tools: [{ googleSearch: {} }]
+                // Note: responseMimeType: 'application/json' is NOT allowed with googleSearch
             }
         });
 
@@ -122,8 +124,8 @@ export const findProductImage = async (modelName: string): Promise<string[]> => 
             });
         }
 
-        // 2. Fallback: Parse text if it returned a JSON array
-        if (urls.length === 0 && response.text) {
+        // 2. Fallback: Parse text if it returned a JSON array in the text
+        if (response.text) {
             try {
                 // Robust parsing: strip markdown and find JSON array
                 let text = response.text;
