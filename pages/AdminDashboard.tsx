@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { useShop } from '../context/ShopContext';
 import { Navigate } from 'react-router-dom';
 import { 
@@ -7,7 +7,7 @@ import {
    Settings as SettingsIcon, TrendingUp, DollarSign, X, Search, Filter,
    ArrowRight, AlertCircle, RefreshCw, BarChart2, Bell, Truck,
    FileText, ChevronRight, Download, Upload, Image as ImageIcon, Globe, Share2, Layers, Minimize, Loader2,
-   LogOut, Sparkles, CheckCircle, Menu, MoreVertical
+   LogOut, Sparkles, FileUp
 } from 'lucide-react';
 import { Product, Order } from '../types';
 
@@ -43,6 +43,9 @@ export const AdminDashboard: React.FC = () => {
   
   // Bulk processing state
   const [isProcessingImages, setIsProcessingImages] = useState(false);
+  
+  // Import Ref
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!user || user.role !== 'admin') {
      return <Navigate to="/login" replace />;
@@ -229,6 +232,64 @@ export const AdminDashboard: React.FC = () => {
     link.click();
     document.body.removeChild(link);
     showToast(`${filename} downloaded`, 'success');
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const csv = event.target?.result as string;
+      const lines = csv.split('\n');
+      if (lines.length < 2) {
+         showToast('Invalid CSV format', 'error');
+         return;
+      }
+      const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+      
+      let importedCount = 0;
+      for (let i = 1; i < lines.length; i++) {
+        if (!lines[i].trim()) continue;
+        const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
+        const product: any = {};
+        
+        headers.forEach((header, index) => {
+           if (header === 'specs') {
+              try { product[header] = JSON.parse(values[index].replace(/;/g, ',')); } catch { product[header] = {}; }
+           } else if (header === 'price' || header === 'stock' || header === 'rating' || header === 'reviewsCount' || header === 'originalPrice') {
+              product[header] = Number(values[index]) || 0;
+           } else if (header === 'images') {
+              product[header] = []; 
+           } else {
+              product[header] = values[index];
+           }
+        });
+
+        // Basic validation and defaults
+        if (product.name && product.price) {
+           product.id = `prod-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+           if(!product.images) product.images = [];
+           if(!product.specs) product.specs = {};
+           if(!product.seo) product.seo = {};
+           if(!product.colors) product.colors = ['#000000'];
+           if(!product.tags) product.tags = [];
+           if(!product.category) product.category = 'Smartphones';
+           if(!product.brand) product.brand = 'Generic';
+           product.imageSeed = Math.floor(Math.random() * 1000);
+           
+           addProduct(product as Product);
+           importedCount++;
+        }
+      }
+      showToast(`Successfully imported ${importedCount} products`, 'success');
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // Reset input
   };
 
   // --- RENDER HELPERS ---
@@ -513,6 +574,19 @@ export const AdminDashboard: React.FC = () => {
                       >
                          <Download size={16}/> Export
                       </button>
+                      <button 
+                        onClick={handleImportClick}
+                        className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold text-gray-700 hover:bg-gray-100 flex items-center gap-2 transition-colors"
+                      >
+                         <FileUp size={16}/> Import
+                      </button>
+                      <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        onChange={handleImportCSV} 
+                        className="hidden" 
+                        accept=".csv"
+                      />
                    </div>
                    
                    <div className="flex gap-3">
