@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Product, CartItem, ToastMessage, User, Order, Address, Review, AppSettings } from '../types';
+import { Product, CartItem, ToastMessage, User, Order, Address, Review, AppSettings, CustomerProfile, Warehouse, RoleDefinition, Permission, RoleType } from '../types';
 import { PRODUCTS as INITIAL_PRODUCTS } from '../data/products';
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -15,6 +15,58 @@ const DEFAULT_SETTINGS: AppSettings = {
   freeShippingThreshold: 50
 };
 
+// 1 Main Warehouse + 8 Retail Shops
+const INITIAL_WAREHOUSES: Warehouse[] = [
+  { id: 'WH-MAIN', name: 'Shuwaikh Central Hub', location: 'Shuwaikh Industrial', capacity: 50000, utilization: 85, type: 'Main Warehouse' },
+  { id: 'SH-01', name: 'The Avenues Store', location: 'Al Rai', capacity: 2000, utilization: 65, type: 'Retail Shop' },
+  { id: 'SH-02', name: '360 Mall Store', location: 'Zahra', capacity: 1500, utilization: 50, type: 'Retail Shop' },
+  { id: 'SH-03', name: 'Marina Mall Store', location: 'Salmiya', capacity: 1800, utilization: 70, type: 'Retail Shop' },
+  { id: 'SH-04', name: 'Al Kout Mall Store', location: 'Fahaheel', capacity: 1500, utilization: 45, type: 'Retail Shop' },
+  { id: 'SH-05', name: 'Gate Mall Store', location: 'Egaila', capacity: 1200, utilization: 60, type: 'Retail Shop' },
+  { id: 'SH-06', name: 'Assima Mall Store', location: 'Kuwait City', capacity: 1600, utilization: 55, type: 'Retail Shop' },
+  { id: 'SH-07', name: 'Promenade Store', location: 'Hawalli', capacity: 1000, utilization: 40, type: 'Retail Shop' },
+  { id: 'SH-08', name: 'Al Hamra Tower Store', location: 'Sharq', capacity: 800, utilization: 30, type: 'Retail Shop' },
+];
+
+const INITIAL_ROLES: RoleDefinition[] = [
+  { 
+    id: 'role-super', 
+    name: 'Super Admin', 
+    isSystem: true,
+    permissions: ['manage_products', 'manage_orders', 'manage_inventory', 'manage_users', 'manage_roles', 'view_reports', 'manage_settings'] 
+  },
+  { 
+    id: 'role-admin', 
+    name: 'Admin', 
+    isSystem: true,
+    permissions: ['manage_products', 'manage_orders', 'manage_inventory', 'view_reports'] 
+  },
+  { 
+    id: 'role-sales', 
+    name: 'Sales', 
+    isSystem: true,
+    permissions: ['manage_orders', 'view_reports'] 
+  }
+];
+
+const AVAILABLE_PERMISSIONS: Permission[] = [
+  { id: 'p1', label: 'Manage Products', key: 'manage_products' },
+  { id: 'p2', label: 'Manage Orders', key: 'manage_orders' },
+  { id: 'p3', label: 'Manage Inventory', key: 'manage_inventory' },
+  { id: 'p4', label: 'Manage Users', key: 'manage_users' },
+  { id: 'p5', label: 'Manage Roles', key: 'manage_roles' },
+  { id: 'p6', label: 'View Reports', key: 'view_reports' },
+  { id: 'p7', label: 'System Settings', key: 'manage_settings' },
+];
+
+// Mock Customers
+const INITIAL_CUSTOMERS: CustomerProfile[] = [
+  { id: 'C-001', name: 'Abdullah Al-Salem', email: 'abdullah@example.com', phone: '+965 9999 1234', joinDate: '2023-01-15', totalSpent: 1450, ordersCount: 5, segment: 'VIP', lastOrderDate: '2024-02-10', avatar: 'https://ui-avatars.com/api/?name=Abdullah', notes: 'Prefers flagship Samsungs' },
+  { id: 'C-002', name: 'Sarah Kuwaiti', email: 'sarah@example.com', phone: '+965 6666 5678', joinDate: '2023-11-20', totalSpent: 350, ordersCount: 2, segment: 'Regular', lastOrderDate: '2024-01-05', avatar: 'https://ui-avatars.com/api/?name=Sarah' },
+  { id: 'C-003', name: 'Jassim Tech', email: 'jassim@example.com', phone: '+965 5555 9876', joinDate: '2022-05-10', totalSpent: 4200, ordersCount: 12, segment: 'VIP', lastOrderDate: '2024-02-28', avatar: 'https://ui-avatars.com/api/?name=Jassim' },
+  { id: 'C-004', name: 'New User', email: 'new@example.com', phone: '+965 9876 5432', joinDate: '2024-02-25', totalSpent: 0, ordersCount: 0, segment: 'New', lastOrderDate: '-', avatar: 'https://ui-avatars.com/api/?name=New' },
+];
+
 interface ShopContextType {
   products: Product[];
   cart: CartItem[];
@@ -25,7 +77,11 @@ interface ShopContextType {
   searchQuery: string;
   user: User | null;
   orders: Order[];
+  customers: CustomerProfile[];
+  warehouses: Warehouse[];
   appSettings: AppSettings;
+  roles: RoleDefinition[];
+  availablePermissions: Permission[];
   
   // Actions
   setSearchQuery: (query: string) => void;
@@ -54,6 +110,13 @@ interface ShopContextType {
   updateProduct: (product: Product) => void;
   addProduct: (product: Product) => void;
   updateSettings: (settings: AppSettings) => void;
+  updateCustomer: (customer: CustomerProfile) => void;
+  
+  // Role Management
+  addRole: (role: RoleDefinition) => void;
+  updateRole: (role: RoleDefinition) => void;
+  deleteRole: (roleId: string) => void;
+  checkPermission: (permissionKey: string) => boolean;
 
   totalAmount: number;
   toast: ToastMessage | null;
@@ -108,12 +171,16 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return saved ? JSON.parse(saved) : DEFAULT_SETTINGS;
   });
 
+  // Roles State
+  const [roles, setRoles] = useState<RoleDefinition[]>(() => {
+     const saved = localStorage.getItem('lumina_roles');
+     return saved ? JSON.parse(saved) : INITIAL_ROLES;
+  });
+
   // Orders (Persisted)
   const [orders, setOrders] = useState<Order[]>(() => {
      const saved = localStorage.getItem('lumina_orders');
      if (saved) return JSON.parse(saved);
-     
-     // Default Mock Orders
      return [
        {
          id: 'ORD-7782-XJ',
@@ -131,9 +198,45 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     ];
   });
 
+  // CRM & Inventory State
+  const [customers, setCustomers] = useState<CustomerProfile[]>(INITIAL_CUSTOMERS);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>(INITIAL_WAREHOUSES);
+
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [toast, setToast] = useState<ToastMessage | null>(null);
+
+  // Live Data Simulator
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // 10% Chance to simulate a new order
+      if (Math.random() > 0.90) {
+        const randomProduct = products[Math.floor(Math.random() * products.length)];
+        const randomCust = customers[Math.floor(Math.random() * customers.length)];
+        const newOrder: Order = {
+          id: `ORD-${Math.floor(Math.random() * 90000)}`,
+          date: new Date().toISOString().split('T')[0],
+          total: randomProduct.price,
+          status: 'New',
+          paymentStatus: 'Paid',
+          paymentMethod: Math.random() > 0.5 ? 'KNET' : 'Credit Card',
+          items: [{...randomProduct, quantity: 1}],
+          fraudScore: Math.floor(Math.random() * 20),
+          customer: {
+            name: randomCust.name,
+            email: randomCust.email,
+            phone: randomCust.phone,
+            address: 'Kuwait',
+            segment: randomCust.segment
+          }
+        };
+        setOrders(prev => [newOrder, ...prev]);
+        showToast(`New Order from ${randomCust.name}!`, 'info');
+      }
+    }, 15000); // Check every 15 seconds
+
+    return () => clearInterval(interval);
+  }, [products, customers]);
 
   // Persistence Effects
   useEffect(() => { localStorage.setItem('lumina_products', JSON.stringify(products)); }, [products]);
@@ -143,6 +246,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => { localStorage.setItem('lumina_recent', JSON.stringify(recentlyViewed)); }, [recentlyViewed]);
   useEffect(() => { localStorage.setItem('lumina_settings', JSON.stringify(appSettings)); }, [appSettings]);
   useEffect(() => { localStorage.setItem('lumina_orders', JSON.stringify(orders)); }, [orders]);
+  useEffect(() => { localStorage.setItem('lumina_roles', JSON.stringify(roles)); }, [roles]);
   useEffect(() => { 
     if(user) localStorage.setItem('lumina_user', JSON.stringify(user));
     else localStorage.removeItem('lumina_user');
@@ -258,18 +362,25 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
-  // Auth Logic
+  // Auth Logic with Roles
   const login = (email: string) => {
-    const isAdmin = email === 'admin@lakkiphones.com';
+    // Determine Role
+    let role: RoleType = 'User';
+    let name = email.split('@')[0];
+
+    if (email === 'super@lakkiphones.com') { role = 'Super Admin'; name = 'Super Admin'; }
+    else if (email === 'admin@lakkiphones.com') { role = 'Admin'; name = 'Admin User'; }
+    else if (email === 'sales@lakkiphones.com') { role = 'Sales'; name = 'Sales Agent'; }
+
     setUser({
-      id: isAdmin ? 'admin-1' : 'u-123',
-      name: isAdmin ? 'Admin User' : email.split('@')[0],
+      id: role !== 'User' ? `staff-${Date.now()}` : 'u-123',
+      name: name,
       email: email,
-      avatar: `https://ui-avatars.com/api/?name=${email.split('@')[0]}&background=random`,
-      role: isAdmin ? 'admin' : 'user',
+      avatar: `https://ui-avatars.com/api/?name=${name}&background=random`,
+      role: role,
       addresses: []
     });
-    showToast(`Welcome back, ${isAdmin ? 'Admin' : email.split('@')[0]}!`, 'success');
+    showToast(`Welcome back, ${name}! (${role})`, 'success');
   };
 
   const register = (name: string, email: string) => {
@@ -278,7 +389,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       name,
       email,
       avatar: `https://ui-avatars.com/api/?name=${name}&background=random`,
-      role: 'user',
+      role: 'User',
       addresses: []
     });
     showToast('Account created successfully!', 'success');
@@ -287,6 +398,14 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = () => {
     setUser(null);
     showToast('You have been logged out', 'info');
+  };
+
+  const checkPermission = (permissionKey: string): boolean => {
+    if (!user) return false;
+    // Find role definition
+    const roleDef = roles.find(r => r.name === user.role);
+    if (!roleDef) return false;
+    return roleDef.permissions.includes(permissionKey);
   };
 
   // Review Logic
@@ -331,8 +450,9 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ...orderData,
       id: `ORD-${Math.floor(1000 + Math.random() * 9000)}-${Date.now().toString().slice(-4)}`,
       date: new Date().toISOString().split('T')[0],
-      status: 'Processing',
-      paymentStatus: 'Paid'
+      status: 'New',
+      paymentStatus: 'Paid',
+      fraudScore: 5 // Low risk by default
     };
     setOrders(prev => [newOrder, ...prev]);
     
@@ -346,40 +466,86 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return p;
     }));
 
+    // Update Customer LTV if exists
+    const custEmail = orderData.customer.email;
+    setCustomers(prev => {
+       const existing = prev.find(c => c.email === custEmail);
+       if(existing) {
+          return prev.map(c => c.email === custEmail ? { 
+             ...c, 
+             totalSpent: c.totalSpent + orderData.total,
+             ordersCount: c.ordersCount + 1,
+             lastOrderDate: new Date().toISOString().split('T')[0]
+          } : c);
+       }
+       return prev;
+    });
+
     return newOrder;
   };
 
   // Admin Logic
   const updateOrderStatus = (orderId: string, status: Order['status']) => {
+    if(!checkPermission('manage_orders')) { showToast('Permission denied', 'error'); return; }
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
     showToast(`Order ${orderId} updated to ${status}`, 'success');
   };
 
   const deleteOrder = (orderId: string) => {
+    if(!checkPermission('manage_orders')) { showToast('Permission denied', 'error'); return; }
     setOrders(prev => prev.filter(o => o.id !== orderId));
     showToast('Order deleted successfully', 'info');
   };
 
   const deleteProduct = (productId: string) => {
+    if(!checkPermission('manage_products')) { showToast('Permission denied', 'error'); return; }
     setProducts(prev => prev.filter(p => p.id !== productId));
     showToast('Product deleted from inventory', 'info');
   };
 
   const updateProduct = (product: Product) => {
+    if(!checkPermission('manage_products')) { showToast('Permission denied', 'error'); return; }
     setProducts(prev => prev.map(p => p.id === product.id ? product : p));
     setCart(prev => prev.map(item => item.id === product.id ? { ...item, ...product, quantity: item.quantity } : item));
     showToast('Product updated successfully', 'success');
   };
 
   const addProduct = (product: Product) => {
+     if(!checkPermission('manage_products')) { showToast('Permission denied', 'error'); return; }
      setProducts(prev => [product, ...prev]);
      showToast('Product added to inventory', 'success');
   };
 
   const updateSettings = (settings: AppSettings) => {
+    if(!checkPermission('manage_settings')) { showToast('Permission denied', 'error'); return; }
     setAppSettings(settings);
     showToast('Store settings updated', 'success');
   };
+
+  const updateCustomer = (customer: CustomerProfile) => {
+    if(!checkPermission('manage_users')) { showToast('Permission denied', 'error'); return; }
+    setCustomers(prev => prev.map(c => c.id === customer.id ? customer : c));
+    showToast('Customer profile updated', 'success');
+  };
+
+  // Role Management Actions
+  const addRole = (role: RoleDefinition) => {
+    if(!checkPermission('manage_roles')) { showToast('Permission denied', 'error'); return; }
+    setRoles(prev => [...prev, role]);
+    showToast('Role created', 'success');
+  }
+
+  const updateRole = (role: RoleDefinition) => {
+    if(!checkPermission('manage_roles')) { showToast('Permission denied', 'error'); return; }
+    setRoles(prev => prev.map(r => r.id === role.id ? role : r));
+    showToast('Role updated', 'success');
+  }
+
+  const deleteRole = (roleId: string) => {
+    if(!checkPermission('manage_roles')) { showToast('Permission denied', 'error'); return; }
+    setRoles(prev => prev.filter(r => r.id !== roleId));
+    showToast('Role deleted', 'info');
+  }
 
   const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
@@ -394,7 +560,11 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       searchQuery,
       user,
       orders,
+      customers,
+      warehouses,
       appSettings,
+      roles,
+      availablePermissions: AVAILABLE_PERMISSIONS,
       setSearchQuery,
       addToCart,
       removeFromCart,
@@ -422,7 +592,12 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       deleteProduct,
       updateProduct,
       addProduct,
-      updateSettings
+      updateSettings,
+      updateCustomer,
+      addRole,
+      updateRole,
+      deleteRole,
+      checkPermission
     }}>
       {children}
     </ShopContext.Provider>

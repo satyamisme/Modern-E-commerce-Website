@@ -126,7 +126,7 @@ export const Navbar: React.FC = () => {
                        <p className="text-xs text-gray-500 truncate">{user.email}</p>
                     </div>
                  </div>
-                 {user.role === 'admin' && (
+                 {user.role !== 'User' && (
                     <Link to="/admin" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-center gap-2 w-full py-3 bg-slate-900 text-white text-sm font-bold rounded-xl shadow-lg">
                        <LayoutDashboard size={16}/> Admin Dashboard
                     </Link>
@@ -333,7 +333,7 @@ export const Navbar: React.FC = () => {
                               <p className="text-xs text-gray-500 truncate">{user.email}</p>
                            </div>
                            <div className="py-2">
-                               {user.role === 'admin' && (
+                               {user.role !== 'User' && (
                                   <Link to="/admin" className="flex items-center gap-3 px-5 py-3 text-sm text-purple-700 hover:bg-purple-50 transition-colors font-bold">
                                      <LayoutDashboard size={18} /> Admin Dashboard
                                   </Link>

@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Chat, GenerateContentResponse } from "@google/genai";
 import { Product } from "../types";
 import { PRODUCTS } from "../data/products";
@@ -62,4 +63,50 @@ export const generateProductReview = async (product: Product): Promise<string> =
     console.error("Gemini Review Error:", error);
     return "Could not generate review at this time.";
   }
+};
+
+// New function to auto-fetch/generate specs from model name
+export const fetchPhoneSpecs = async (modelName: string): Promise<Partial<Product> | null> => {
+    try {
+        const prompt = `
+            Act as a technical product specification API. 
+            I need detailed technical specs for the mobile phone: "${modelName}".
+            Return ONLY a valid JSON object. Do not include markdown formatting.
+            
+            The JSON structure must be:
+            {
+                "brand": "String (e.g. Apple, Samsung)",
+                "category": "Smartphones",
+                "price": Number (Estimate in Kuwaiti Dinar KWD, strictly number),
+                "description": "A 2-sentence marketing description.",
+                "specs": {
+                    "screen": "String (e.g. 6.1 inch OLED)",
+                    "processor": "String (e.g. A17 Pro)",
+                    "ram": "String (e.g. 8GB)",
+                    "storage": "String (e.g. 128GB)",
+                    "camera": "String (e.g. 48MP Main)",
+                    "battery": "String (e.g. 3274mAh)",
+                    "os": "String",
+                    "weight": "String",
+                    "dimensions": "String"
+                },
+                "tags": ["Array", "of", "strings"]
+            }
+        `;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+        });
+
+        let text = response.text || "{}";
+        // Clean up markdown code blocks if present
+        text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        
+        const data = JSON.parse(text);
+        return data;
+    } catch (error) {
+        console.error("Error generating specs:", error);
+        return null;
+    }
 };

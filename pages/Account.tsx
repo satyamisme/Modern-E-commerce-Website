@@ -54,7 +54,7 @@ export const Account: React.FC = () => {
                    <img src={user.avatar} alt={user.name} className="w-20 h-20 rounded-full mx-auto mb-4 border-4 border-gray-50" />
                    <h2 className="text-lg font-bold text-gray-900">{user.name}</h2>
                    <p className="text-sm text-gray-500">{user.email}</p>
-                   {user.role === 'admin' && <span className="inline-block mt-2 px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-bold rounded">Admin</span>}
+                   {user.role !== 'User' && <span className="inline-block mt-2 px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-bold rounded">{user.role}</span>}
                 </div>
                 
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-1">

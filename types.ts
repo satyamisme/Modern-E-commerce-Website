@@ -24,7 +24,7 @@ export interface Product {
   brand: string;
   price: number;
   originalPrice?: number;
-  costPrice?: number; // New: For margin calculation
+  costPrice?: number;
   monthlyPrice?: number;
   rating: number;
   reviewsCount?: number;
@@ -37,21 +37,24 @@ export interface Product {
     storage?: string;
     camera?: string;
     battery?: string;
-    batteryLife?: string;
+    os?: string;
+    weight?: string;
+    dimensions?: string;
+    sim?: string;
     connectivity?: string;
-    features?: string;
+    sensors?: string;
     [key: string]: string | undefined;
   };
   description: string;
   imageSeed: number;
-  image?: string; // Custom image URL support
-  images?: string[]; // Gallery images
+  image?: string;
+  images?: string[];
   tags: string[];
   express?: boolean;
   stock: number;
-  reorderPoint?: number; // New: Inventory alert threshold
-  supplier?: string; // New: Supplier info
-  sku?: string; // New: Stock Keeping Unit
+  reorderPoint?: number;
+  supplier?: string;
+  sku?: string;
   reviews?: Review[];
   seo?: {
     metaTitle?: string;
@@ -83,14 +86,52 @@ export interface ToastMessage {
   type: 'success' | 'error' | 'info';
 }
 
+export type RoleType = 'Super Admin' | 'Admin' | 'Sales' | 'User';
+
+export interface Permission {
+  id: string;
+  label: string;
+  key: 'manage_products' | 'manage_orders' | 'manage_inventory' | 'manage_users' | 'manage_roles' | 'view_reports' | 'manage_settings';
+}
+
+export interface RoleDefinition {
+  id: string;
+  name: RoleType | string;
+  permissions: string[]; // Array of permission keys
+  isSystem?: boolean; // Cannot be deleted if true
+}
+
 export interface User {
   id: string;
   name: string;
   email: string;
   phone?: string;
   avatar?: string;
-  role: 'user' | 'admin';
+  role: RoleType;
   addresses: Address[];
+}
+
+export interface CustomerProfile {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  joinDate: string;
+  totalSpent: number;
+  ordersCount: number;
+  segment: 'VIP' | 'Regular' | 'New' | 'At-Risk';
+  lastOrderDate: string;
+  notes?: string;
+  avatar: string;
+}
+
+export interface Warehouse {
+  id: string;
+  name: string;
+  location: string;
+  capacity: number;
+  utilization: number;
+  type: 'Main Warehouse' | 'Retail Shop';
 }
 
 export interface Order {
@@ -101,13 +142,13 @@ export interface Order {
   paymentStatus: 'Pending' | 'Paid' | 'Failed';
   paymentMethod: 'KNET' | 'Credit Card';
   items: CartItem[];
-  fraudScore?: number; // 0-100 (Safe to High Risk)
+  fraudScore?: number;
   customer: {
     name: string;
     email: string;
     phone: string;
     address: string;
-    segment?: 'VIP' | 'New' | 'At-Risk';
+    segment?: 'VIP' | 'Regular' | 'New' | 'At-Risk';
   };
 }
 

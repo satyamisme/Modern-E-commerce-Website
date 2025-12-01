@@ -5,19 +5,22 @@ import { Product } from '../../types';
 import { 
    Edit, Trash2, Plus, Search, X, 
    FileText, DollarSign, ImageIcon, Layers, Globe, 
-   Upload, Sparkles, Wand2, RefreshCw
+   Upload, Sparkles, Wand2, RefreshCw, Download, Database
 } from 'lucide-react';
-import { sendMessageToGemini } from '../../services/geminiService';
+import { sendMessageToGemini, fetchPhoneSpecs } from '../../services/geminiService';
 
 export const ProductManager: React.FC = () => {
   const { products, addProduct, updateProduct, deleteProduct, appSettings, showToast } = useShop();
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [showBulkModal, setShowBulkModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'basic' | 'pricing' | 'media' | 'specs' | 'seo'>('basic');
   const [editingProduct, setEditingProduct] = useState<Partial<Product>>({
      name: '', brand: 'Apple', price: 0, category: 'Smartphones', stock: 10, description: '', specs: {}, images: [], seo: { metaTitle: '', metaDescription: '', keywords: [] }
   });
   const [aiLoading, setAiLoading] = useState(false);
+  const [bulkInput, setBulkInput] = useState('');
+  const [bulkProcessing, setBulkProcessing] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -72,7 +75,6 @@ export const ProductManager: React.FC = () => {
         } else {
            const prompt = `Generate SEO metadata for "${editingProduct.name}". Return a JSON object with keys: metaTitle, metaDescription, and keywords (comma separated string).`;
            const result = await sendMessageToGemini(prompt);
-           // Simple parse attempt (in production use structured output)
            setEditingProduct(prev => ({ 
               ...prev, 
               seo: { 
@@ -87,6 +89,74 @@ export const ProductManager: React.FC = () => {
         showToast('AI Generation Failed', 'error');
      }
      setAiLoading(false);
+  };
+
+  const handleFetchSpecs = async () => {
+    if(!editingProduct.name) {
+       showToast('Enter a model name first', 'error');
+       return;
+    }
+    setAiLoading(true);
+    showToast('Fetching specs from AI...', 'info');
+    
+    const data = await fetchPhoneSpecs(editingProduct.name);
+    
+    if(data) {
+       setEditingProduct(prev => ({
+          ...prev,
+          brand: data.brand || prev.brand,
+          price: data.price || prev.price,
+          description: data.description || prev.description,
+          specs: data.specs || prev.specs,
+          tags: data.tags || prev.tags
+       }));
+       showToast('Specs autofilled successfully!', 'success');
+    } else {
+       showToast('Could not fetch specs. Try a clearer model name.', 'error');
+    }
+    setAiLoading(false);
+  };
+
+  const handleBulkImport = async () => {
+     if(!bulkInput.trim()) return;
+     setBulkProcessing(true);
+     const models = bulkInput.split('\n').filter(s => s.trim().length > 0);
+     
+     showToast(`Processing ${models.length} models...`, 'info');
+     
+     let count = 0;
+     for (const modelName of models) {
+        try {
+           const data = await fetchPhoneSpecs(modelName);
+           if (data) {
+              const newProduct: Product = {
+                 id: `prod-${Date.now()}-${Math.random()}`,
+                 name: modelName,
+                 brand: data.brand || 'Generic',
+                 price: data.price || 0,
+                 category: 'Smartphones',
+                 colors: ['#000000'],
+                 specs: data.specs || {},
+                 description: data.description || 'Imported product',
+                 imageSeed: Math.floor(Math.random() * 1000),
+                 images: [],
+                 tags: data.tags || [],
+                 stock: 10,
+                 rating: 0,
+                 seo: { metaTitle: modelName, metaDescription: '', keywords: [] }
+              };
+              addProduct(newProduct);
+              count++;
+           }
+        } catch (e) {
+           console.error(`Failed to import ${modelName}`);
+        }
+     }
+     
+     showToast(`Successfully imported ${count} products`, 'success');
+     setBulkProcessing(false);
+     setShowBulkModal(false);
+     setBulkInput('');
   };
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -111,16 +181,24 @@ export const ProductManager: React.FC = () => {
                className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:border-primary outline-none"
              />
           </div>
-          <button 
-             onClick={() => {
-                setEditingProduct({ name: '', brand: 'Apple', price: 0, category: 'Smartphones', stock: 10, description: '', specs: {}, images: [], seo: { metaTitle: '', metaDescription: '', keywords: [] } });
-                setActiveTab('basic');
-                setShowModal(true);
-             }}
-             className="px-6 py-2.5 bg-primary text-white font-bold rounded-xl hover:bg-slate-800 transition-colors flex items-center gap-2 shadow-lg shadow-primary/20"
-          >
-             <Plus size={18} /> Add Product
-          </button>
+          <div className="flex gap-3">
+             <button 
+                onClick={() => setShowBulkModal(true)}
+                className="px-6 py-2.5 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition-colors flex items-center gap-2"
+             >
+                <Database size={18} /> Bulk Import
+             </button>
+             <button 
+                onClick={() => {
+                    setEditingProduct({ name: '', brand: 'Apple', price: 0, category: 'Smartphones', stock: 10, description: '', specs: {}, images: [], seo: { metaTitle: '', metaDescription: '', keywords: [] } });
+                    setActiveTab('basic');
+                    setShowModal(true);
+                }}
+                className="px-6 py-2.5 bg-primary text-white font-bold rounded-xl hover:bg-slate-800 transition-colors flex items-center gap-2 shadow-lg shadow-primary/20"
+             >
+                <Plus size={18} /> Add Product
+             </button>
+          </div>
        </div>
 
        {/* List View */}
@@ -222,9 +300,27 @@ export const ProductManager: React.FC = () => {
                    <form id="productForm" onSubmit={handleSave}>
                       {activeTab === 'basic' && (
                          <div className="grid grid-cols-2 gap-6">
-                            <div className="col-span-2">
-                                <label className="block text-sm font-bold text-gray-700 mb-2">Product Name</label>
-                                <input type="text" required value={editingProduct.name} onChange={e => setEditingProduct({...editingProduct, name: e.target.value})} className="w-full p-3 bg-white border border-gray-200 rounded-xl focus:border-primary outline-none" placeholder="e.g. iPhone 15 Pro Max"/>
+                            <div className="col-span-2 relative">
+                                <label className="block text-sm font-bold text-gray-700 mb-2">Product Name (Model)</label>
+                                <div className="flex gap-2">
+                                    <input 
+                                        type="text" 
+                                        required 
+                                        value={editingProduct.name} 
+                                        onChange={e => setEditingProduct({...editingProduct, name: e.target.value})} 
+                                        className="w-full p-3 bg-white border border-gray-200 rounded-xl focus:border-primary outline-none" 
+                                        placeholder="e.g. iPhone 15 Pro Max"
+                                    />
+                                    <button 
+                                        type="button" 
+                                        onClick={handleFetchSpecs}
+                                        disabled={aiLoading}
+                                        className="px-4 py-2 bg-gradient-to-r from-purple-500 to-indigo-600 text-white font-bold rounded-xl whitespace-nowrap flex items-center gap-2 shadow-lg hover:shadow-xl transition-all"
+                                    >
+                                        {aiLoading ? <RefreshCw size={16} className="animate-spin"/> : <Wand2 size={16}/>} Auto-Fetch Specs
+                                    </button>
+                                </div>
+                                <p className="text-xs text-gray-400 mt-1">Enter a model name and click Auto-Fetch to populate specs from the web (via AI).</p>
                             </div>
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-2">Brand</label>
@@ -267,7 +363,6 @@ export const ProductManager: React.FC = () => {
                                    <div>
                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Cost Price (KWD)</label>
                                        <input type="number" value={editingProduct.costPrice || ''} onChange={e => setEditingProduct({...editingProduct, costPrice: parseFloat(e.target.value)})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary outline-none" />
-                                       <p className="text-xs text-gray-400 mt-1">Used for margin calculation only.</p>
                                    </div>
                                 </div>
                             </div>
@@ -293,7 +388,6 @@ export const ProductManager: React.FC = () => {
                             <div className="border-3 border-dashed border-gray-200 rounded-2xl p-10 text-center hover:bg-gray-50 cursor-pointer transition-colors bg-white" onClick={() => fileInputRef.current?.click()}>
                                <Upload className="mx-auto text-blue-500 mb-3 bg-blue-50 p-2 rounded-full box-content" size={32}/>
                                <p className="font-bold text-gray-700 text-lg">Click to upload images</p>
-                               <p className="text-sm text-gray-400">or drag and drop files here</p>
                                <input type="file" multiple ref={fileInputRef} className="hidden" onChange={handleImageSelect} />
                             </div>
                             <div className="grid grid-cols-5 gap-4">
@@ -308,13 +402,44 @@ export const ProductManager: React.FC = () => {
                       )}
 
                       {activeTab === 'specs' && (
-                         <div className="bg-white p-8 rounded-2xl border border-gray-200 text-center">
-                            <Wand2 size={48} className="mx-auto mb-4 text-purple-300"/>
-                            <h3 className="text-lg font-bold text-gray-900 mb-2">AI Spec Extraction</h3>
-                            <p className="text-gray-500 mb-6">Upload a product image or paste a URL to automatically extract technical specifications.</p>
-                            <button type="button" className="px-6 py-2 bg-purple-100 text-purple-700 font-bold rounded-lg hover:bg-purple-200 transition-colors">
-                               Auto-Fill Specs
-                            </button>
+                         <div className="space-y-4">
+                            <div className="bg-purple-50 p-4 rounded-xl border border-purple-100 flex items-center justify-between">
+                               <div>
+                                  <h4 className="font-bold text-purple-800">Detailed Specifications</h4>
+                                  <p className="text-xs text-purple-600">These fields are used for comparison and filtering.</p>
+                               </div>
+                               <button type="button" onClick={handleFetchSpecs} className="px-4 py-2 bg-white rounded-lg text-xs font-bold text-purple-700 shadow-sm hover:shadow">
+                                  Refetch Specs
+                               </button>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                               {[
+                                  { label: "Screen", key: "screen" },
+                                  { label: "Processor (CPU)", key: "processor" },
+                                  { label: "RAM", key: "ram" },
+                                  { label: "Storage", key: "storage" },
+                                  { label: "Camera", key: "camera" },
+                                  { label: "Battery", key: "battery" },
+                                  { label: "OS", key: "os" },
+                                  { label: "Weight", key: "weight" },
+                                  { label: "Dimensions", key: "dimensions" },
+                                  { label: "SIM Type", key: "sim" },
+                               ].map(spec => (
+                                  <div key={spec.key}>
+                                     <label className="block text-xs font-bold text-gray-500 uppercase mb-1">{spec.label}</label>
+                                     <input 
+                                        type="text" 
+                                        value={editingProduct.specs?.[spec.key] || ''} 
+                                        onChange={e => setEditingProduct({
+                                            ...editingProduct, 
+                                            specs: { ...editingProduct.specs, [spec.key]: e.target.value }
+                                        })} 
+                                        className="w-full p-3 bg-white border border-gray-200 rounded-xl focus:border-primary outline-none"
+                                     />
+                                  </div>
+                               ))}
+                            </div>
                          </div>
                       )}
 
@@ -345,6 +470,42 @@ export const ProductManager: React.FC = () => {
                 <div className="p-4 border-t border-gray-100 bg-white flex justify-end gap-3 z-10">
                    <button type="button" onClick={() => setShowModal(false)} className="px-6 py-3 bg-gray-100 rounded-xl text-gray-700 font-bold hover:bg-gray-200 transition-colors">Cancel</button>
                    <button type="submit" form="productForm" className="px-8 py-3 bg-primary text-white rounded-xl font-bold hover:bg-slate-800 transition-colors shadow-lg shadow-primary/20">Save Product</button>
+                </div>
+             </div>
+          </div>
+       )}
+
+       {/* Bulk Import Modal */}
+       {showBulkModal && (
+          <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden p-8">
+                <div className="flex justify-between items-center mb-6">
+                   <h3 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><Database size={24} className="text-purple-600"/> Bulk Product Import</h3>
+                   <button onClick={() => setShowBulkModal(false)} className="p-2 hover:bg-gray-100 rounded-full"><X size={20}/></button>
+                </div>
+                
+                <p className="text-gray-600 mb-4">
+                   Enter a list of mobile phone model names (one per line). 
+                   Our AI will automatically fetch specifications, estimate prices, and create product entries for each.
+                </p>
+
+                <textarea 
+                   className="w-full h-48 p-4 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-purple-500 font-mono text-sm resize-none mb-6"
+                   placeholder="Samsung Galaxy S24 Ultra&#10;iPhone 15 Pro&#10;Google Pixel 8"
+                   value={bulkInput}
+                   onChange={e => setBulkInput(e.target.value)}
+                ></textarea>
+
+                <div className="flex justify-end gap-3">
+                   <button onClick={() => setShowBulkModal(false)} className="px-6 py-3 text-gray-600 font-bold hover:bg-gray-50 rounded-xl">Cancel</button>
+                   <button 
+                      onClick={handleBulkImport}
+                      disabled={bulkProcessing || !bulkInput.trim()}
+                      className="px-8 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold rounded-xl shadow-lg hover:shadow-xl transition-all disabled:opacity-50 flex items-center gap-2"
+                   >
+                      {bulkProcessing ? <RefreshCw size={18} className="animate-spin"/> : <Download size={18}/>} 
+                      {bulkProcessing ? 'Processing...' : 'Start Auto-Import'}
+                   </button>
                 </div>
              </div>
           </div>
