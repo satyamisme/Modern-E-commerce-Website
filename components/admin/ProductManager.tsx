@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { useShop } from '../../context/ShopContext';
 import { Product, ProductVariant } from '../../types';
@@ -6,7 +5,7 @@ import {
    Edit, Trash2, Plus, Search, X, 
    FileText, DollarSign, ImageIcon, Layers, Globe, 
    Upload, RefreshCw, Box, CheckCircle, 
-   Palette, ArrowLeft, ChevronRight, Wand2, ChevronLeft, Calculator, Tag, BrainCircuit, Filter
+   Palette, ArrowLeft, ChevronRight, Wand2, ChevronLeft, Calculator, Tag, BrainCircuit, Filter, LayoutTemplate, Star
 } from 'lucide-react';
 import { fetchPhoneSpecs, findProductImage, searchMobileModels, generateSEO } from '../../services/geminiService';
 
@@ -14,10 +13,11 @@ export const ProductManager: React.FC = () => {
   const { products, addProduct, updateProduct, deleteProduct, appSettings, showToast } = useShop();
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'basic' | 'variants' | 'media' | 'specs' | 'seo'>('basic');
+  const [activeTab, setActiveTab] = useState<'basic' | 'variants' | 'media' | 'specs' | 'seo' | 'storefront'>('basic');
+  const [viewFilter, setViewFilter] = useState<'all' | 'hero' | 'featured' | 'ticker'>('all');
   
   const [editingProduct, setEditingProduct] = useState<Partial<Product>>({
-     name: '', brand: 'Apple', price: 0, category: 'Smartphones', stock: 0, description: '', specs: {}, images: [], seo: { metaTitle: '', metaDescription: '', keywords: [] }, colors: [], storageOptions: [], variants: []
+     name: '', brand: 'Apple', price: 0, category: 'Smartphones', stock: 0, description: '', specs: {}, images: [], seo: { metaTitle: '', metaDescription: '', keywords: [] }, colors: [], storageOptions: [], variants: [], isHero: false, isFeatured: false, isTicker: false
   });
   
   const [aiLoading, setAiLoading] = useState(false);
@@ -48,10 +48,16 @@ export const ProductManager: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const filteredProducts = products.filter(p => 
-     p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-     p.brand.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredProducts = products.filter(p => {
+     const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                           p.brand.toLowerCase().includes(searchTerm.toLowerCase());
+     
+     if (viewFilter === 'hero') return matchesSearch && p.isHero;
+     if (viewFilter === 'featured') return matchesSearch && p.isFeatured;
+     if (viewFilter === 'ticker') return matchesSearch && p.isTicker;
+     
+     return matchesSearch;
+  });
 
   // Click Outside Handler for Autocomplete
   useEffect(() => {
@@ -121,7 +127,13 @@ export const ProductManager: React.FC = () => {
         reorderPoint: Number(editingProduct.reorderPoint) || 5,
         supplier: editingProduct.supplier || '',
         sku: editingProduct.sku || '',
-        seo: editingProduct.seo || { metaTitle: '', metaDescription: '', keywords: [] }
+        seo: editingProduct.seo || { metaTitle: '', metaDescription: '', keywords: [] },
+        isHero: editingProduct.isHero || false,
+        heroImage: editingProduct.heroImage || '',
+        heroTitle: editingProduct.heroTitle || '',
+        heroSubtitle: editingProduct.heroSubtitle || '',
+        isFeatured: editingProduct.isFeatured || false,
+        isTicker: editingProduct.isTicker || false
      };
 
      if (editingProduct.id) updateProduct(productData);
@@ -201,7 +213,8 @@ export const ProductManager: React.FC = () => {
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
      if (e.target.files && e.target.files.length > 0) {
-        const newImages = Array.from(e.target.files).map(file => URL.createObjectURL(file));
+        // Fix: Explicitly case file to any or File to satisfy TS
+        const newImages = Array.from(e.target.files).map((file: any) => URL.createObjectURL(file));
         setEditingProduct(prev => ({ ...prev, images: [...(prev.images || []), ...newImages] }));
      }
   };
@@ -375,13 +388,13 @@ export const ProductManager: React.FC = () => {
   );
 
   const handleNext = () => {
-      const tabs: typeof activeTab[] = ['basic', 'variants', 'media', 'specs', 'seo'];
+      const tabs: typeof activeTab[] = ['basic', 'variants', 'media', 'specs', 'seo', 'storefront'];
       const idx = tabs.indexOf(activeTab);
       if (idx < tabs.length - 1) setActiveTab(tabs[idx + 1]);
   };
 
   const handleBack = () => {
-      const tabs: typeof activeTab[] = ['basic', 'variants', 'media', 'specs', 'seo'];
+      const tabs: typeof activeTab[] = ['basic', 'variants', 'media', 'specs', 'seo', 'storefront'];
       const idx = tabs.indexOf(activeTab);
       if (idx > 0) setActiveTab(tabs[idx - 1]);
   };
@@ -402,6 +415,22 @@ export const ProductManager: React.FC = () => {
                    className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:border-primary outline-none"
                  />
               </div>
+
+              {/* View Filters */}
+              <div className="flex gap-2 items-center bg-gray-50 p-1 rounded-xl border border-gray-200">
+                  <span className="text-xs font-bold text-gray-500 px-2">Show:</span>
+                  <select 
+                     value={viewFilter} 
+                     onChange={(e) => setViewFilter(e.target.value as any)}
+                     className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer"
+                  >
+                     <option value="all">All Products</option>
+                     <option value="hero">Hero Slider Only</option>
+                     <option value="featured">Featured Rail</option>
+                     <option value="ticker">Scrolling Ticker</option>
+                  </select>
+              </div>
+
               <div className="flex gap-3">
                  <button 
                     onClick={() => {
@@ -424,6 +453,7 @@ export const ProductManager: React.FC = () => {
                  <thead className="bg-gray-50/50 text-gray-400 text-[10px] uppercase font-bold tracking-wider">
                     <tr>
                        <th className="p-5">Product Details</th>
+                       <th className="p-5">Display Settings</th>
                        <th className="p-5">Base Price</th>
                        <th className="p-5">Total Inventory</th>
                        <th className="p-5 text-right">Actions</th>
@@ -441,6 +471,14 @@ export const ProductManager: React.FC = () => {
                                    <p className="font-bold text-gray-900 text-sm">{product.name}</p>
                                    <p className="text-xs text-gray-500 font-medium">{product.brand} • {product.category}</p>
                                 </div>
+                             </div>
+                          </td>
+                          <td className="p-5">
+                             <div className="flex gap-1 flex-wrap">
+                                {product.isHero && <span className="text-[10px] font-bold bg-purple-100 text-purple-700 px-2 py-0.5 rounded border border-purple-200">HERO</span>}
+                                {product.isFeatured && <span className="text-[10px] font-bold bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded border border-yellow-200">FEATURED</span>}
+                                {product.isTicker && <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded border border-blue-200">TICKER</span>}
+                                {!product.isHero && !product.isFeatured && !product.isTicker && <span className="text-[10px] text-gray-400 italic">Standard</span>}
                              </div>
                           </td>
                           <td className="p-5">
@@ -500,6 +538,7 @@ export const ProductManager: React.FC = () => {
                     <TabButton tab="media" icon={ImageIcon} label="Media" />
                     <TabButton tab="specs" icon={Layers} label="Specifications" />
                     <TabButton tab="seo" icon={Globe} label="SEO" />
+                    <TabButton tab="storefront" icon={LayoutTemplate} label="Storefront" />
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-gray-50/50">
@@ -641,432 +680,504 @@ export const ProductManager: React.FC = () => {
 
                       {/* --- VARIANTS & STOCK TAB --- */}
                       {activeTab === 'variants' && (
-                          <div className="space-y-6">
-                              {/* Attribute Builder */}
-                              <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-                                  <h4 className="font-bold text-gray-900 mb-6 flex items-center gap-2"><Palette size={18}/> 1. Define Attributes & Generate</h4>
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                      {/* Colors */}
-                                      <div className="bg-gray-50 p-5 rounded-xl border border-gray-100">
-                                          <div className="flex justify-between items-center mb-3">
-                                             <label className="text-xs font-bold text-gray-700 uppercase">Colors</label>
-                                             <span className="text-[10px] text-gray-400">{editingProduct.colors?.length || 0} selected</span>
-                                          </div>
-                                          
-                                          {/* Visual Color Input */}
-                                          <div className="relative mb-3">
-                                              <input 
-                                                  type="text" 
-                                                  placeholder="e.g. Titanium Blue"
-                                                  value={colorInput}
-                                                  onChange={e => setColorInput(e.target.value)}
-                                                  onKeyDown={addColor}
-                                                  className="w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:border-primary outline-none focus:ring-2 focus:ring-primary/10 transition-all"
-                                              />
-                                              <div className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border border-gray-300 shadow-sm" style={{backgroundColor: colorInput || '#fff'}}></div>
-                                              <button type="button" onClick={() => addColor({key: 'Enter', preventDefault: () => {}} as any)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 transition-colors">
-                                                 <Plus size={14} />
-                                              </button>
-                                          </div>
+                        <div className="space-y-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                                    <h4 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><Palette size={18}/> Define Attributes</h4>
+                                    
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Colors (Press Enter)</label>
+                                            <div className="flex flex-wrap gap-2 mb-2">
+                                                {editingProduct.colors?.map(color => (
+                                                    <span key={color} className="px-3 py-1 bg-gray-100 rounded-lg text-sm font-bold flex items-center gap-2">
+                                                        <span className="w-3 h-3 rounded-full border border-gray-300" style={{backgroundColor: color}}></span>
+                                                        {color} 
+                                                        <X size={14} className="cursor-pointer text-gray-400 hover:text-red-500" onClick={() => setEditingProduct(prev => ({...prev, colors: prev.colors?.filter(c => c !== color)}))}/>
+                                                    </span>
+                                                ))}
+                                            </div>
+                                            <input 
+                                                type="text" 
+                                                value={colorInput}
+                                                onChange={e => setColorInput(e.target.value)}
+                                                onKeyDown={addColor}
+                                                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary outline-none"
+                                                placeholder="e.g. #000000 or Black"
+                                            />
+                                        </div>
 
-                                          <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto custom-scrollbar p-1">
-                                              {editingProduct.colors?.map((color, i) => (
-                                                  <div key={i} className="group flex items-center gap-2 bg-white pl-2 pr-1 py-1.5 rounded-lg border border-gray-200 shadow-sm hover:border-primary transition-colors">
-                                                      <div className="w-5 h-5 rounded-full border border-gray-100 shadow-inner" style={{backgroundColor: color}}></div>
-                                                      <span className="text-sm font-bold text-gray-700">{color}</span>
-                                                      <button type="button" onClick={() => setEditingProduct(prev => ({...prev, colors: prev.colors?.filter(c => c !== color)}))} className="p-1 hover:bg-red-50 text-gray-300 hover:text-red-500 rounded-full transition-colors"><X size={12}/></button>
-                                                  </div>
-                                              ))}
-                                              {(!editingProduct.colors || editingProduct.colors.length === 0) && (
-                                                 <span className="text-xs text-gray-400 italic">No colors added. Press Enter to add.</span>
-                                              )}
-                                          </div>
-                                      </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Storage Options (Press Enter)</label>
+                                            <div className="flex flex-wrap gap-2 mb-2">
+                                                {editingProduct.storageOptions?.map(opt => (
+                                                    <span key={opt} className="px-3 py-1 bg-gray-100 rounded-lg text-sm font-bold flex items-center gap-2">
+                                                        {opt}
+                                                        <X size={14} className="cursor-pointer text-gray-400 hover:text-red-500" onClick={() => setEditingProduct(prev => ({...prev, storageOptions: prev.storageOptions?.filter(o => o !== opt)}))}/>
+                                                    </span>
+                                                ))}
+                                            </div>
+                                            <input 
+                                                type="text" 
+                                                value={storageInput}
+                                                onChange={e => setStorageInput(e.target.value)}
+                                                onKeyDown={addStorage}
+                                                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary outline-none"
+                                                placeholder="e.g. 256GB"
+                                            />
+                                        </div>
+                                        
+                                        <button 
+                                            type="button"
+                                            onClick={generateVariants}
+                                            className="w-full py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-black transition-colors flex items-center justify-center gap-2"
+                                        >
+                                            <Wand2 size={16} /> Generate Variant Matrix
+                                        </button>
+                                    </div>
+                                </div>
 
-                                      {/* Storage */}
-                                      <div className="bg-gray-50 p-5 rounded-xl border border-gray-100">
-                                          <div className="flex justify-between items-center mb-3">
-                                             <label className="text-xs font-bold text-gray-700 uppercase">Storage / Size</label>
-                                             <span className="text-[10px] text-gray-400">{editingProduct.storageOptions?.length || 0} selected</span>
-                                          </div>
-                                          
-                                          <div className="relative mb-3">
-                                              <input 
-                                                  type="text" 
-                                                  placeholder="e.g. 256GB"
-                                                  value={storageInput}
-                                                  onChange={e => setStorageInput(e.target.value)}
-                                                  onKeyDown={addStorage}
-                                                  className="w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:border-primary outline-none focus:ring-2 focus:ring-primary/10 transition-all"
-                                              />
-                                              <Tag size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
-                                              <button type="button" onClick={() => addStorage({key: 'Enter', preventDefault: () => {}} as any)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 transition-colors">
-                                                 <Plus size={14} />
-                                              </button>
-                                          </div>
+                                <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                                    <h4 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><Calculator size={18}/> Smart Bulk Updates</h4>
+                                    <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 mb-4 text-xs text-blue-800 leading-relaxed">
+                                        Use this to quickly set prices or stock for specific groups (e.g. "Set all 512GB models to 400 KWD").
+                                    </div>
+                                    
+                                    <div className="space-y-4">
+                                        <div className="flex gap-2">
+                                            <select value={bulkColorScope} onChange={e => setBulkColorScope(e.target.value)} className="flex-1 p-2 bg-white border border-gray-200 rounded-lg text-sm">
+                                                <option value="all">All Colors</option>
+                                                {editingProduct.colors?.map(c => <option key={c} value={c}>{c}</option>)}
+                                            </select>
+                                            <select value={bulkStorageScope} onChange={e => setBulkStorageScope(e.target.value)} className="flex-1 p-2 bg-white border border-gray-200 rounded-lg text-sm">
+                                                <option value="all">All Storage</option>
+                                                {editingProduct.storageOptions?.map(s => <option key={s} value={s}>{s}</option>)}
+                                            </select>
+                                        </div>
+                                        
+                                        <div className="flex gap-2">
+                                            <select value={bulkAction} onChange={e => setBulkAction(e.target.value)} className="flex-1 p-2 bg-white border border-gray-200 rounded-lg text-sm font-bold">
+                                                <option value="price_set">Set Price To</option>
+                                                <option value="price_add">Increase Price By</option>
+                                                <option value="price_sub">Decrease Price By</option>
+                                                <option value="stock_set">Set Stock To</option>
+                                                <option value="stock_add">Add to Stock</option>
+                                            </select>
+                                            <input 
+                                                type="number" 
+                                                value={bulkValue} 
+                                                onChange={e => setBulkValue(e.target.value)} 
+                                                placeholder="Value" 
+                                                className="w-24 p-2 bg-white border border-gray-200 rounded-lg text-sm"
+                                            />
+                                            <button 
+                                                type="button" 
+                                                onClick={applySmartBulkUpdate}
+                                                className="px-4 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700"
+                                            >
+                                                Apply
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
 
-                                          <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto custom-scrollbar p-1">
-                                              {editingProduct.storageOptions?.map((size, i) => (
-                                                  <div key={i} className="flex items-center gap-2 bg-white pl-3 pr-2 py-1.5 rounded-lg border border-gray-200 shadow-sm hover:border-blue-500 transition-colors">
-                                                      <span className="text-sm font-bold text-gray-700">{size}</span>
-                                                      <button type="button" onClick={() => setEditingProduct(prev => ({...prev, storageOptions: prev.storageOptions?.filter(s => s !== size)}))} className="p-1 hover:bg-red-50 text-gray-300 hover:text-red-500 rounded-full transition-colors"><X size={12}/></button>
-                                                  </div>
-                                              ))}
-                                              {(!editingProduct.storageOptions || editingProduct.storageOptions.length === 0) && (
-                                                 <span className="text-xs text-gray-400 italic">No options added.</span>
-                                              )}
-                                          </div>
-                                          
-                                          <div className="mt-2 flex gap-2">
-                                              {['128GB', '256GB', '512GB', '1TB'].map(s => (
-                                                  <button 
-                                                      key={s} 
-                                                      type="button" 
-                                                      onClick={() => {
-                                                        if (!editingProduct.storageOptions?.includes(s)) {
-                                                            setEditingProduct(prev => ({...prev, storageOptions: [...(prev.storageOptions || []), s]}));
-                                                        }
-                                                      }}
-                                                      className="px-2 py-1 text-[10px] bg-white border border-gray-200 rounded hover:border-blue-500 hover:text-blue-600 transition-colors"
-                                                  >
-                                                      + {s}
-                                                  </button>
-                                              ))}
-                                          </div>
-                                      </div>
-                                  </div>
-                                  
-                                  <div className="mt-6 flex justify-end">
-                                      <button type="button" onClick={generateVariants} className="px-8 py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-black transition-colors flex items-center gap-2 shadow-lg shadow-gray-900/20 active:scale-95">
-                                          <Wand2 size={18}/> Generate Matrix ({((editingProduct.colors?.length || 1) * (editingProduct.storageOptions?.length || 1))} Variants)
-                                      </button>
-                                  </div>
-                              </div>
-
-                              {/* Smart Modifiers - Bulk Actions */}
-                              {editingProduct.variants && editingProduct.variants.length > 0 && (
-                                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-5 rounded-xl border border-blue-100 flex flex-col md:flex-row flex-wrap items-center gap-4 shadow-inner">
-                                      <div className="flex items-center gap-2 text-blue-800 font-bold text-sm mr-auto">
-                                          <Calculator size={18}/> Smart Modifiers <span className="text-[10px] font-normal text-blue-600 ml-1">(Bulk Update)</span>
-                                      </div>
-                                      
-                                      {/* Scope Selection */}
-                                      <div className="flex gap-2">
-                                          <div className="bg-white p-1 rounded-lg border border-blue-100 shadow-sm flex flex-col min-w-[100px]">
-                                              <span className="text-[9px] font-bold text-gray-400 uppercase px-2 pt-0.5">Color Scope</span>
-                                              <select 
-                                                  value={bulkColorScope} 
-                                                  onChange={(e) => setBulkColorScope(e.target.value)}
-                                                  className="text-xs font-bold text-gray-700 bg-transparent outline-none cursor-pointer hover:text-primary p-1"
-                                              >
-                                                  <option value="all">All Colors</option>
-                                                  {editingProduct.colors?.map(c => <option key={`c-${c}`} value={c}>{c}</option>)}
-                                              </select>
-                                          </div>
-
-                                          <div className="bg-white p-1 rounded-lg border border-blue-100 shadow-sm flex flex-col min-w-[100px]">
-                                              <span className="text-[9px] font-bold text-gray-400 uppercase px-2 pt-0.5">Storage Scope</span>
-                                              <select 
-                                                  value={bulkStorageScope} 
-                                                  onChange={(e) => setBulkStorageScope(e.target.value)}
-                                                  className="text-xs font-bold text-gray-700 bg-transparent outline-none cursor-pointer hover:text-primary p-1"
-                                              >
-                                                  <option value="all">All Sizes</option>
-                                                  {editingProduct.storageOptions?.map(s => <option key={`s-${s}`} value={s}>{s}</option>)}
-                                              </select>
-                                          </div>
-                                      </div>
-
-                                      <div className="h-8 w-px bg-blue-200 hidden md:block"></div>
-                                      
-                                      <div className="flex items-center gap-2">
-                                          <select 
-                                              value={bulkAction} 
-                                              onChange={(e) => setBulkAction(e.target.value)}
-                                              className="p-2 bg-white rounded-lg border border-blue-200 text-xs font-bold text-gray-700 outline-none"
-                                          >
-                                              <option value="price_set">Set Price To</option>
-                                              <option value="price_add">Add to Price</option>
-                                              <option value="price_sub">Subtract from Price</option>
-                                              <option value="stock_set">Set Stock To</option>
-                                              <option value="stock_add">Add to Stock</option>
-                                          </select>
-                                          
-                                          <input 
-                                              type="number" 
-                                              placeholder="Value..." 
-                                              value={bulkValue}
-                                              onChange={(e) => setBulkValue(e.target.value)}
-                                              className="w-20 p-2 text-xs font-bold border border-blue-200 rounded-lg outline-none focus:border-blue-500 shadow-sm"
-                                          />
-                                          <button 
-                                              type="button" 
-                                              onClick={applySmartBulkUpdate} 
-                                              className="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 shadow-md transition-all active:translate-y-0.5"
-                                          >
-                                              Apply
-                                          </button>
-                                      </div>
-                                  </div>
-                              )}
-
-                              {/* Visual Matrix Table */}
-                              {editingProduct.variants && editingProduct.variants.length > 0 && (
-                                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2">
-                                      <div className="p-5 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-center bg-gray-50 gap-4">
-                                          <div className="flex items-center gap-3">
-                                              <h4 className="font-bold text-gray-900 flex items-center gap-2"><Layers size={18}/> Variant Matrix</h4>
-                                              <div className="text-xs font-bold text-gray-500 bg-white border border-gray-200 px-3 py-1 rounded-full">
-                                                  Total Stock: <span className="text-primary">{editingProduct.variants.reduce((a,b) => a + b.stock, 0)}</span>
-                                              </div>
-                                          </div>
-
-                                          {/* View Filters */}
-                                          <div className="flex items-center gap-2">
-                                              <Filter size={14} className="text-gray-400"/>
-                                              <span className="text-xs font-bold text-gray-500 uppercase">Filter View:</span>
-                                              <select 
-                                                  value={matrixFilterColor} 
-                                                  onChange={e => setMatrixFilterColor(e.target.value)}
-                                                  className="p-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-700 focus:border-primary outline-none"
-                                              >
-                                                  <option value="all">All Colors</option>
-                                                  {editingProduct.colors?.map(c => <option key={c} value={c}>{c}</option>)}
-                                              </select>
-                                              <select 
-                                                  value={matrixFilterStorage} 
-                                                  onChange={e => setMatrixFilterStorage(e.target.value)}
-                                                  className="p-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-700 focus:border-primary outline-none"
-                                              >
-                                                  <option value="all">All Storage</option>
-                                                  {editingProduct.storageOptions?.map(s => <option key={s} value={s}>{s}</option>)}
-                                              </select>
-                                          </div>
-                                      </div>
-
-                                      <div className="overflow-x-auto">
-                                          <table className="w-full text-left border-collapse">
-                                              <thead>
-                                                  <tr className="bg-gray-50 text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100">
-                                                      <th className="p-4 pl-6">Variant Info</th>
-                                                      <th className="p-4 w-48">SKU</th>
-                                                      <th className="p-4 w-40">Price (KWD)</th>
-                                                      <th className="p-4 w-32">Stock</th>
-                                                      <th className="p-4 w-12"></th>
-                                                  </tr>
-                                              </thead>
-                                              <tbody className="divide-y divide-gray-50">
-                                                  {editingProduct.variants
-                                                      .filter(v => 
-                                                          (matrixFilterColor === 'all' || v.color === matrixFilterColor) && 
-                                                          (matrixFilterStorage === 'all' || v.storage === matrixFilterStorage)
-                                                      )
-                                                      .map((variant) => {
-                                                      const isPriceDiff = variant.price !== editingProduct.price;
-                                                      return (
-                                                      <tr key={variant.id} className="hover:bg-blue-50/30 transition-colors group">
-                                                          <td className="p-4 pl-6">
-                                                              <div className="flex items-center gap-3">
-                                                                  <div className="w-8 h-8 rounded-lg border border-gray-200 shadow-sm flex-shrink-0 relative overflow-hidden bg-white">
-                                                                      <div className="absolute inset-0" style={{backgroundColor: variant.color}}></div>
-                                                                      <div className="absolute inset-0 bg-gradient-to-br from-white/40 to-transparent"></div>
-                                                                  </div>
-                                                                  <div>
-                                                                      <span className="font-bold text-gray-900 text-sm block">{variant.color}</span>
-                                                                      <span className="text-xs font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">{variant.storage}</span>
-                                                                  </div>
-                                                              </div>
-                                                          </td>
-                                                          <td className="p-4">
-                                                              <input 
-                                                                  type="text" 
-                                                                  value={variant.sku} 
-                                                                  onChange={(e) => updateVariant(variant.id, 'sku', e.target.value)}
-                                                                  className="w-full bg-transparent border-b border-dashed border-gray-300 focus:border-primary outline-none text-xs font-mono text-gray-500 py-1 transition-colors hover:border-gray-400"
-                                                              />
-                                                          </td>
-                                                          <td className="p-4">
-                                                              <div className="relative">
-                                                                  <input 
-                                                                      type="number" 
-                                                                      value={variant.price} 
-                                                                      onChange={(e) => updateVariant(variant.id, 'price', parseFloat(e.target.value))}
-                                                                      className={`w-full p-2 border rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-primary/20 transition-all ${isPriceDiff ? 'bg-yellow-50 border-yellow-200 text-yellow-900' : 'bg-white border-gray-200 text-gray-900'}`}
-                                                                  />
-                                                                  {isPriceDiff && (
-                                                                      <div className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-yellow-600 pointer-events-none">
-                                                                          {variant.price > (editingProduct.price || 0) ? '+' : ''}{variant.price - (editingProduct.price || 0)}
-                                                                      </div>
-                                                                  )}
-                                                              </div>
-                                                          </td>
-                                                          <td className="p-4">
-                                                              <input 
-                                                                  type="number" 
-                                                                  value={variant.stock} 
-                                                                  onChange={(e) => updateVariant(variant.id, 'stock', parseInt(e.target.value))}
-                                                                  className={`w-full p-2 border rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-primary/20 transition-all ${variant.stock < 5 ? 'bg-red-50 border-red-200 text-red-600' : 'bg-white border-gray-200 text-green-700'}`}
-                                                              />
-                                                          </td>
-                                                          <td className="p-4 text-center">
-                                                              <button onClick={() => setEditingProduct(prev => ({...prev, variants: prev.variants?.filter(v => v.id !== variant.id)}))} className="text-gray-300 hover:text-red-500 transition-colors p-1.5 hover:bg-red-50 rounded-lg">
-                                                                  <X size={16}/>
-                                                              </button>
-                                                          </td>
-                                                      </tr>
-                                                  )})}
-                                              </tbody>
-                                          </table>
-                                      </div>
-                                  </div>
-                              )}
-                          </div>
+                            {/* Matrix Table */}
+                            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                                <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                                    <h4 className="font-bold text-gray-900">Variant Matrix</h4>
+                                    <div className="flex gap-2">
+                                        <select value={matrixFilterColor} onChange={e => setMatrixFilterColor(e.target.value)} className="text-xs p-1.5 border border-gray-200 rounded-lg bg-white">
+                                            <option value="all">Filter Color</option>
+                                            {editingProduct.colors?.map(c => <option key={c} value={c}>{c}</option>)}
+                                        </select>
+                                        <select value={matrixFilterStorage} onChange={e => setMatrixFilterStorage(e.target.value)} className="text-xs p-1.5 border border-gray-200 rounded-lg bg-white">
+                                            <option value="all">Filter Storage</option>
+                                            {editingProduct.storageOptions?.map(s => <option key={s} value={s}>{s}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                                
+                                <div className="max-h-96 overflow-y-auto custom-scrollbar">
+                                    <table className="w-full text-sm text-left">
+                                        <thead className="bg-white text-xs text-gray-500 uppercase font-bold sticky top-0 z-10 shadow-sm">
+                                            <tr>
+                                                <th className="p-4 bg-gray-50">Variant</th>
+                                                <th className="p-4 bg-gray-50">SKU</th>
+                                                <th className="p-4 bg-gray-50 w-32">Price (KWD)</th>
+                                                <th className="p-4 bg-gray-50 w-32">Stock</th>
+                                                <th className="p-4 bg-gray-50 w-10"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100">
+                                            {editingProduct.variants?.filter(v => 
+                                                (matrixFilterColor === 'all' || v.color === matrixFilterColor) && 
+                                                (matrixFilterStorage === 'all' || v.storage === matrixFilterStorage)
+                                            ).map((variant) => (
+                                                <tr key={variant.id} className="hover:bg-blue-50/30 transition-colors">
+                                                    <td className="p-4">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-8 h-8 rounded-lg border border-gray-200 shadow-sm" style={{backgroundColor: variant.color}}></div>
+                                                            <div>
+                                                                <p className="font-bold text-gray-900">{variant.color}</p>
+                                                                <p className="text-xs text-gray-500">{variant.storage}</p>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="p-4">
+                                                        <input 
+                                                            type="text" 
+                                                            value={variant.sku}
+                                                            onChange={(e) => updateVariant(variant.id, 'sku', e.target.value)}
+                                                            className="w-full bg-transparent border-b border-transparent hover:border-gray-300 focus:border-primary outline-none text-xs font-mono text-gray-600 transition-colors"
+                                                        />
+                                                    </td>
+                                                    <td className="p-4">
+                                                        <input 
+                                                            type="number" 
+                                                            value={variant.price}
+                                                            onChange={(e) => updateVariant(variant.id, 'price', parseFloat(e.target.value))}
+                                                            className="w-full p-2 bg-white border border-gray-200 rounded-lg focus:border-primary outline-none font-bold"
+                                                        />
+                                                    </td>
+                                                    <td className="p-4">
+                                                        <input 
+                                                            type="number" 
+                                                            value={variant.stock}
+                                                            onChange={(e) => updateVariant(variant.id, 'stock', parseFloat(e.target.value))}
+                                                            className={`w-full p-2 border rounded-lg focus:border-primary outline-none font-bold ${variant.stock > 0 ? 'bg-white border-gray-200' : 'bg-red-50 border-red-200 text-red-600'}`}
+                                                        />
+                                                    </td>
+                                                    <td className="p-4 text-center">
+                                                        <button 
+                                                            type="button"
+                                                            onClick={() => setEditingProduct(prev => ({...prev, variants: prev.variants?.filter(v => v.id !== variant.id)}))}
+                                                            className="text-gray-400 hover:text-red-500 transition-colors"
+                                                        >
+                                                            <X size={16}/>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
                       )}
 
                       {/* --- MEDIA TAB --- */}
                       {activeTab === 'media' && (
-                         <div className="space-y-6">
-                            <div className="flex gap-4 border-b border-gray-200 pb-1">
-                                <button type="button" onClick={() => setImageTab('fetch')} className={`pb-2 text-sm font-bold transition-colors ${imageTab === 'fetch' ? 'text-primary border-b-2 border-primary' : 'text-gray-400'}`}>Fetch from Web</button>
-                                <button type="button" onClick={() => setImageTab('url')} className={`pb-2 text-sm font-bold transition-colors ${imageTab === 'url' ? 'text-primary border-b-2 border-primary' : 'text-gray-400'}`}>Add from URL</button>
-                                <button type="button" onClick={() => setImageTab('upload')} className={`pb-2 text-sm font-bold transition-colors ${imageTab === 'upload' ? 'text-primary border-b-2 border-primary' : 'text-gray-400'}`}>Upload</button>
-                            </div>
-
-                            {imageTab === 'fetch' && (
-                                <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 text-center">
-                                    <Globe size={32} className="mx-auto text-blue-500 mb-3"/>
-                                    <h4 className="font-bold text-blue-900 mb-2">Fetch Official Images</h4>
-                                    <p className="text-sm text-blue-600 mb-4">We'll search for official press renders of <strong>{editingProduct.name || 'this product'}</strong>.</p>
-                                    <button 
-                                        type="button" 
-                                        onClick={handleFetchImages}
-                                        disabled={aiLoading || !editingProduct.name}
-                                        className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 mx-auto disabled:opacity-50"
-                                    >
-                                        {aiLoading ? <RefreshCw size={16} className="animate-spin"/> : <Search size={16}/>} Find Images
-                                    </button>
-                                </div>
-                            )}
-
-                            {imageTab === 'url' && (
-                                <div className="flex gap-2">
-                                    <input 
-                                        type="text" 
-                                        value={imageUrlInput}
-                                        onChange={e => setImageUrlInput(e.target.value)}
-                                        placeholder="https://example.com/image.jpg"
-                                        className="flex-1 p-3 bg-white border border-gray-200 rounded-xl focus:border-primary outline-none"
-                                    />
-                                    <button type="button" onClick={handleAddImageUrl} className="px-4 py-2 bg-gray-900 text-white rounded-xl font-bold hover:bg-black transition-colors">
-                                        Add
-                                    </button>
-                                </div>
-                            )}
-
-                            {imageTab === 'upload' && (
-                                <div className="border-3 border-dashed border-gray-200 rounded-2xl p-10 text-center hover:bg-gray-50 cursor-pointer transition-colors bg-white" onClick={() => fileInputRef.current?.click()}>
-                                    <Upload className="mx-auto text-blue-500 mb-3 bg-blue-50 p-2 rounded-full box-content" size={32}/>
-                                    <p className="font-bold text-gray-700 text-lg">Click to upload images</p>
-                                    <input type="file" multiple ref={fileInputRef} className="hidden" onChange={handleImageSelect} />
-                                </div>
-                            )}
-
-                            <div className="grid grid-cols-5 gap-4">
-                               {editingProduct.images?.map((img, i) => (
-                                  <div key={i} className="aspect-square bg-white rounded-xl overflow-hidden relative group border border-gray-200 shadow-sm">
-                                     <img src={img} className="w-full h-full object-contain p-2"/>
-                                     <button type="button" onClick={() => setEditingProduct({...editingProduct, images: editingProduct.images?.filter((_, idx) => idx !== i)})} className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><X size={14}/></button>
-                                  </div>
-                               ))}
-                            </div>
-                         </div>
-                      )}
-
-                      {activeTab === 'specs' && (
-                         <div className="space-y-6">
-                            <div className="bg-purple-50 p-4 rounded-xl border border-purple-100 flex items-center justify-between">
-                               <div>
-                                  <h4 className="font-bold text-purple-800">Full Specifications</h4>
-                                  <p className="text-xs text-purple-600">Deep technical specs (GSM Arena style). Use "Auto-Fill" for best results.</p>
-                               </div>
-                               <button type="button" onClick={() => handleFetchSpecs()} className="px-4 py-2 bg-white rounded-lg text-xs font-bold text-purple-700 shadow-sm hover:shadow flex items-center gap-2">
-                                  <Wand2 size={14}/> Auto-Fill Specs
-                               </button>
-                            </div>
-
-                            {/* Render Deep Grouped Specs */}
-                            <div className="space-y-6">
-                                {Object.entries(editingProduct.specs || {}).map(([key, val]) => {
-                                    if (typeof val === 'object' && val !== null) {
-                                        return renderSpecGroup(key, val);
-                                    }
-                                    return null;
-                                })}
+                        <div className="space-y-6">
+                            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                                <h4 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><ImageIcon size={18}/> Product Images</h4>
                                 
-                                <button type="button" className="w-full py-3 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 font-bold hover:border-primary hover:text-primary transition-colors" onClick={() => {
-                                    setEditingProduct(prev => ({
-                                        ...prev,
-                                        specs: { ...prev.specs, "New Section": { "Feature": "" } }
-                                    }));
-                                }}>
-                                    + Add Specification Section
-                                </button>
+                                <div className="flex gap-4 mb-4 border-b border-gray-100">
+                                    <button type="button" onClick={() => setImageTab('fetch')} className={`pb-2 px-2 text-sm font-bold border-b-2 transition-colors ${imageTab === 'fetch' ? 'border-primary text-primary' : 'border-transparent text-gray-500'}`}>AI Search</button>
+                                    <button type="button" onClick={() => setImageTab('upload')} className={`pb-2 px-2 text-sm font-bold border-b-2 transition-colors ${imageTab === 'upload' ? 'border-primary text-primary' : 'border-transparent text-gray-500'}`}>Upload</button>
+                                    <button type="button" onClick={() => setImageTab('url')} className={`pb-2 px-2 text-sm font-bold border-b-2 transition-colors ${imageTab === 'url' ? 'border-primary text-primary' : 'border-transparent text-gray-500'}`}>Direct URL</button>
+                                </div>
+
+                                {imageTab === 'fetch' && (
+                                    <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-center justify-between">
+                                        <div className="text-sm text-blue-800">
+                                            <strong>AI Image Search:</strong> We'll find official marketing images for <em>{editingProduct.name || 'this product'}</em>.
+                                        </div>
+                                        <button 
+                                            type="button" 
+                                            onClick={handleFetchImages} 
+                                            disabled={aiLoading}
+                                            className="px-4 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                                        >
+                                            {aiLoading ? 'Searching...' : 'Find Images'}
+                                        </button>
+                                    </div>
+                                )}
+
+                                {imageTab === 'upload' && (
+                                    <div 
+                                        className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:bg-gray-50 transition-colors"
+                                        onClick={() => fileInputRef.current?.click()}
+                                    >
+                                        <Upload size={32} className="mx-auto text-gray-400 mb-2"/>
+                                        <p className="text-sm font-bold text-gray-600">Click to Upload Images</p>
+                                        <p className="text-xs text-gray-400 mt-1">PNG, JPG, WEBP up to 5MB</p>
+                                        <input 
+                                            type="file" 
+                                            ref={fileInputRef} 
+                                            className="hidden" 
+                                            multiple 
+                                            accept="image/*"
+                                            onChange={handleImageSelect} 
+                                        />
+                                    </div>
+                                )}
+
+                                {imageTab === 'url' && (
+                                    <div className="flex gap-2">
+                                        <input 
+                                            type="text" 
+                                            value={imageUrlInput}
+                                            onChange={e => setImageUrlInput(e.target.value)}
+                                            placeholder="https://example.com/image.jpg"
+                                            className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary outline-none"
+                                        />
+                                        <button 
+                                            type="button" 
+                                            onClick={handleAddImageUrl}
+                                            className="px-6 bg-gray-900 text-white font-bold rounded-xl hover:bg-black"
+                                        >
+                                            Add
+                                        </button>
+                                    </div>
+                                )}
+
+                                <div className="grid grid-cols-4 sm:grid-cols-6 gap-4 mt-6">
+                                    {editingProduct.images?.map((img, idx) => (
+                                        <div key={idx} className="relative group aspect-square rounded-xl border border-gray-200 overflow-hidden bg-gray-50">
+                                            <img src={img} className="w-full h-full object-contain" alt="Product" />
+                                            <button 
+                                                type="button"
+                                                onClick={() => setEditingProduct(prev => ({...prev, images: prev.images?.filter((_, i) => i !== idx)}))}
+                                                className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                            >
+                                                <X size={12}/>
+                                            </button>
+                                            {idx === 0 && <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] font-bold px-1.5 rounded">Main</span>}
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
-                         </div>
+                        </div>
                       )}
 
+                      {/* --- SPECS TAB --- */}
+                      {activeTab === 'specs' && (
+                          <div className="space-y-6">
+                              <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                                  <div className="flex justify-between items-center mb-6">
+                                      <h4 className="font-bold text-gray-900 flex items-center gap-2"><Layers size={18}/> Technical Specifications</h4>
+                                      <button 
+                                          type="button" 
+                                          onClick={() => handleFetchSpecs()}
+                                          disabled={aiLoading}
+                                          className="px-4 py-2 bg-purple-100 text-purple-700 font-bold rounded-lg hover:bg-purple-200 text-sm flex items-center gap-2"
+                                      >
+                                          {aiLoading ? <RefreshCw className="animate-spin" size={16}/> : <BrainCircuit size={16}/>}
+                                          Auto-Fill with AI
+                                      </button>
+                                  </div>
+
+                                  {editingProduct.specs && Object.keys(editingProduct.specs).length > 0 ? (
+                                      Object.entries(editingProduct.specs).map(([group, data]) => renderSpecGroup(group, data))
+                                  ) : (
+                                      <div className="text-center py-12 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                                          <p className="text-gray-500 text-sm mb-4">No specifications defined yet.</p>
+                                          <button 
+                                              type="button" 
+                                              onClick={() => setEditingProduct(prev => ({...prev, specs: { "General": { "Model": "" } }}))}
+                                              className="px-4 py-2 bg-white border border-gray-300 text-gray-700 font-bold rounded-lg hover:bg-gray-100 text-sm"
+                                          >
+                                              Add Manually
+                                          </button>
+                                      </div>
+                                  )}
+                                  
+                                  {editingProduct.specs && Object.keys(editingProduct.specs).length > 0 && (
+                                     <button 
+                                          type="button" 
+                                          onClick={() => {
+                                              const name = prompt("Enter new group name (e.g. 'Display', 'Camera')");
+                                              if(name) {
+                                                  setEditingProduct(prev => ({...prev, specs: { ...prev.specs, [name]: { "Feature": "" } }}));
+                                              }
+                                          }}
+                                          className="w-full py-3 border-2 border-dashed border-gray-200 rounded-xl text-gray-400 font-bold hover:border-primary hover:text-primary transition-colors flex items-center justify-center gap-2"
+                                     >
+                                          <Plus size={18}/> Add New Spec Group
+                                     </button>
+                                  )}
+                              </div>
+                          </div>
+                      )}
+
+                      {/* --- SEO TAB --- */}
                       {activeTab === 'seo' && (
-                         <div className="space-y-4">
-                             <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 flex items-center justify-between">
-                                 <div>
-                                     <h4 className="font-bold text-indigo-900 flex items-center gap-2"><BrainCircuit size={16}/> AI SEO Optimizer</h4>
-                                     <p className="text-xs text-indigo-700">Auto-generate title, description and keywords to boost sales.</p>
-                                 </div>
-                                 <button 
-                                     type="button" 
-                                     onClick={handleGenerateSEO}
-                                     disabled={aiLoading}
-                                     className="px-4 py-2 bg-white text-indigo-700 font-bold rounded-lg text-xs shadow-sm hover:shadow hover:bg-indigo-50 border border-indigo-200 disabled:opacity-50"
-                                 >
-                                     {aiLoading ? 'Generating...' : 'Generate with AI'}
-                                 </button>
-                             </div>
+                          <div className="space-y-6">
+                              <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                                  <div className="flex justify-between items-center mb-6">
+                                      <h4 className="font-bold text-gray-900 flex items-center gap-2"><Globe size={18}/> Search Engine Optimization</h4>
+                                      <button 
+                                          type="button" 
+                                          onClick={handleGenerateSEO}
+                                          disabled={aiLoading}
+                                          className="px-4 py-2 bg-green-100 text-green-700 font-bold rounded-lg hover:bg-green-200 text-sm flex items-center gap-2"
+                                      >
+                                          <Wand2 size={16}/> Generate with AI
+                                      </button>
+                                  </div>
 
-                             <div>
-                                 <label className="block text-sm font-bold text-gray-700 mb-2">Meta Title</label>
-                                 <input type="text" value={editingProduct.seo?.metaTitle || ''} onChange={e => setEditingProduct({...editingProduct, seo: {...editingProduct.seo, metaTitle: e.target.value} as any})} className="w-full p-3 bg-white border border-gray-200 rounded-xl focus:border-primary outline-none" placeholder="SEO Title"/>
-                             </div>
-                             <div>
-                                 <label className="block text-sm font-bold text-gray-700 mb-2">Meta Description</label>
-                                 <textarea value={editingProduct.seo?.metaDescription || ''} onChange={e => setEditingProduct({...editingProduct, seo: {...editingProduct.seo, metaDescription: e.target.value} as any})} className="w-full p-3 bg-white border border-gray-200 rounded-xl h-24 focus:border-primary outline-none" placeholder="SEO Description"></textarea>
-                             </div>
-                             <div>
-                                 <label className="block text-sm font-bold text-gray-700 mb-2">Keywords / Tags</label>
-                                 <div className="flex flex-wrap gap-2 mb-2">
-                                     {editingProduct.seo?.keywords?.map((kw, i) => (
-                                         <span key={i} className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs font-bold border border-blue-100 flex items-center gap-1">
-                                             {kw} <X size={12} className="cursor-pointer" onClick={() => setEditingProduct(prev => ({...prev, seo: {...prev.seo, keywords: prev.seo?.keywords?.filter(k => k !== kw)} as any}))}/>
-                                         </span>
-                                     ))}
-                                 </div>
-                                 <input 
-                                    type="text" 
-                                    className="w-full p-3 bg-white border border-gray-200 rounded-xl focus:border-primary outline-none" 
-                                    placeholder="Type keyword and press Enter"
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            e.preventDefault();
-                                            const val = e.currentTarget.value.trim();
-                                            if (val && !editingProduct.seo?.keywords?.includes(val)) {
-                                                setEditingProduct(prev => ({...prev, seo: {...prev.seo, keywords: [...(prev.seo?.keywords || []), val]} as any}));
-                                                e.currentTarget.value = '';
-                                            }
-                                        }
-                                    }}
-                                />
-                             </div>
-                         </div>
+                                  <div className="space-y-6">
+                                      <div>
+                                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Meta Title</label>
+                                          <div className="relative">
+                                              <input 
+                                                  type="text" 
+                                                  value={editingProduct.seo?.metaTitle || ''}
+                                                  onChange={e => setEditingProduct({...editingProduct, seo: {...editingProduct.seo, metaTitle: e.target.value}})}
+                                                  className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary outline-none pr-12"
+                                                  placeholder="Product Name | LAKKI PHONES"
+                                                  maxLength={60}
+                                              />
+                                              <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold ${(editingProduct.seo?.metaTitle?.length || 0) > 60 ? 'text-red-500' : 'text-green-500'}`}>
+                                                  {editingProduct.seo?.metaTitle?.length || 0}/60
+                                              </span>
+                                          </div>
+                                      </div>
+                                      
+                                      <div>
+                                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Meta Description</label>
+                                          <div className="relative">
+                                              <textarea 
+                                                  value={editingProduct.seo?.metaDescription || ''}
+                                                  onChange={e => setEditingProduct({...editingProduct, seo: {...editingProduct.seo, metaDescription: e.target.value}})}
+                                                  className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary outline-none h-24 resize-none"
+                                                  placeholder="Buy [Product Name] in Kuwait..."
+                                                  maxLength={160}
+                                              />
+                                              <span className={`absolute right-3 bottom-3 text-xs font-bold ${(editingProduct.seo?.metaDescription?.length || 0) > 160 ? 'text-red-500' : 'text-green-500'}`}>
+                                                  {editingProduct.seo?.metaDescription?.length || 0}/160
+                                              </span>
+                                          </div>
+                                      </div>
+
+                                      <div>
+                                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Keywords</label>
+                                          <input 
+                                              type="text" 
+                                              value={editingProduct.seo?.keywords?.join(', ') || ''}
+                                              onChange={e => setEditingProduct({...editingProduct, seo: {...editingProduct.seo, keywords: e.target.value.split(',').map(s => s.trim())}})}
+                                              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-primary outline-none"
+                                              placeholder="mobile, kuwait, samsung, 5g"
+                                          />
+                                          <p className="text-[10px] text-gray-400 mt-1">Comma separated</p>
+                                      </div>
+
+                                      <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 mt-4">
+                                          <h5 className="text-xs font-bold text-gray-500 uppercase mb-3">Preview on Google</h5>
+                                          <div className="font-sans">
+                                              <div className="text-[#1a0dab] text-lg font-medium hover:underline cursor-pointer truncate">
+                                                  {editingProduct.seo?.metaTitle || editingProduct.name || 'Product Title'}
+                                              </div>
+                                              <div className="text-[#006621] text-sm truncate">
+                                                  https://lakkiphones.com/product/{editingProduct.id || '123'}
+                                              </div>
+                                              <div className="text-[#545454] text-sm line-clamp-2">
+                                                  {editingProduct.seo?.metaDescription || editingProduct.description || 'Product description will appear here...'}
+                                              </div>
+                                          </div>
+                                      </div>
+                                  </div>
+                              </div>
+                          </div>
                       )}
+
+                      {/* --- STOREFRONT TAB --- */}
+                      {activeTab === 'storefront' && (
+                        <div className="space-y-6">
+                            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                                <h4 className="font-bold text-gray-900 mb-6 flex items-center gap-2"><LayoutTemplate size={18}/> Homepage Visibility</h4>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    {/* Hero Toggle */}
+                                    <label className="flex items-start gap-4 p-5 border border-purple-100 bg-purple-50/30 rounded-2xl cursor-pointer hover:bg-purple-50 transition-colors">
+                                        <div className="mt-1">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={editingProduct.isHero || false}
+                                                onChange={e => setEditingProduct({...editingProduct, isHero: e.target.checked})}
+                                                className="w-5 h-5 accent-purple-600"
+                                            />
+                                        </div>
+                                        <div>
+                                            <span className="block font-bold text-gray-900 mb-1">Hero Slider</span>
+                                            <span className="text-xs text-gray-500 leading-relaxed">Display prominently at the very top of the homepage as a large slide.</span>
+                                        </div>
+                                    </label>
+
+                                    {/* Featured Toggle */}
+                                    <label className="flex items-start gap-4 p-5 border border-yellow-100 bg-yellow-50/30 rounded-2xl cursor-pointer hover:bg-yellow-50 transition-colors">
+                                        <div className="mt-1">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={editingProduct.isFeatured || false}
+                                                onChange={e => setEditingProduct({...editingProduct, isFeatured: e.target.checked})}
+                                                className="w-5 h-5 accent-yellow-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <span className="block font-bold text-gray-900 mb-1">Featured Rail</span>
+                                            <span className="text-xs text-gray-500 leading-relaxed">Show in the "Featured Collection" horizontal scroll section.</span>
+                                        </div>
+                                    </label>
+
+                                    {/* Ticker Toggle */}
+                                    <label className="flex items-start gap-4 p-5 border border-blue-100 bg-blue-50/30 rounded-2xl cursor-pointer hover:bg-blue-50 transition-colors">
+                                        <div className="mt-1">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={editingProduct.isTicker || false}
+                                                onChange={e => setEditingProduct({...editingProduct, isTicker: e.target.checked})}
+                                                className="w-5 h-5 accent-blue-600"
+                                            />
+                                        </div>
+                                        <div>
+                                            <span className="block font-bold text-gray-900 mb-1">Scrolling Ticker</span>
+                                            <span className="text-xs text-gray-500 leading-relaxed">Include in the auto-scrolling marquee animation strip.</span>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+
+                            {editingProduct.isHero && (
+                                <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm space-y-4 animate-in fade-in slide-in-from-top-2">
+                                    <h4 className="font-bold text-gray-900 mb-2">Hero Slider Customization</h4>
+                                    
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Custom Title</label>
+                                        <input 
+                                            type="text" 
+                                            value={editingProduct.heroTitle || editingProduct.name}
+                                            onChange={e => setEditingProduct({...editingProduct, heroTitle: e.target.value})}
+                                            className="w-full p-3 bg-white border border-gray-200 rounded-xl focus:border-primary outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Custom Subtitle</label>
+                                        <input 
+                                            type="text" 
+                                            value={editingProduct.heroSubtitle || ''}
+                                            onChange={e => setEditingProduct({...editingProduct, heroSubtitle: e.target.value})}
+                                            placeholder="e.g. New Arrival • Limited Offer"
+                                            className="w-full p-3 bg-white border border-gray-200 rounded-xl focus:border-primary outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Custom Banner Image URL (Wide)</label>
+                                        <input 
+                                            type="text" 
+                                            value={editingProduct.heroImage || ''}
+                                            onChange={e => setEditingProduct({...editingProduct, heroImage: e.target.value})}
+                                            placeholder="https://..."
+                                            className="w-full p-3 bg-white border border-gray-200 rounded-xl focus:border-primary outline-none"
+                                        />
+                                        <p className="text-[10px] text-gray-400 mt-1">Leave empty to use default product image.</p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                      )}
+
                    </form>
                 </div>
 
@@ -1080,7 +1191,7 @@ export const ProductManager: React.FC = () => {
                     >
                         <ChevronLeft size={18}/> Back
                     </button>
-                    {activeTab === 'seo' ? (
+                    {activeTab === 'storefront' ? (
                         <button type="submit" form="productForm" className="px-8 py-3 bg-primary text-white rounded-xl font-bold hover:bg-slate-800 transition-colors shadow-lg shadow-primary/20 flex items-center gap-2">
                             <CheckCircle size={18}/> Save Product
                         </button>

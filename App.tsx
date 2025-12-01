@@ -4,7 +4,6 @@ import { HashRouter, Routes, Route } from 'react-router-dom';
 import { ShopProvider } from './context/ShopContext';
 import { Navbar } from './components/Navbar';
 import { CartDrawer } from './components/CartDrawer';
-import { AIChatBot } from './components/AIChatBot';
 import { Toast } from './components/Toast';
 import { BottomNav } from './components/BottomNav';
 import { Footer } from './components/Footer';
@@ -71,7 +70,6 @@ const App: React.FC = () => {
           
           <Footer />
           <BottomNav />
-          <AIChatBot />
         </div>
       </ShopProvider>
     </HashRouter>

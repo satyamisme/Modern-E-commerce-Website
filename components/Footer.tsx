@@ -1,5 +1,6 @@
+
 import React from 'react';
-import { Smartphone, Mail, Facebook, Twitter, Instagram, CreditCard } from 'lucide-react';
+import { Smartphone, Mail, Facebook, Twitter, Instagram, CreditCard, Link as LinkIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export const Footer: React.FC = () => {
@@ -32,11 +33,9 @@ export const Footer: React.FC = () => {
               Kuwait's #1 destination for premium electronics. We partner directly with global brands to bring you the latest technology with official warranty and unmatchable service.
             </p>
             <div className="flex gap-4 pt-2">
-               {[Facebook, Twitter, Instagram].map((Icon, i) => (
-                  <a key={i} href="#" className="p-3 bg-white/5 rounded-full text-gray-400 hover:bg-secondary hover:text-primary transition-all hover:scale-110">
-                     <Icon size={18} />
-                  </a>
-               ))}
+               <a href="https://linktr.ee/lakkiphones" target="_blank" rel="noreferrer" className="p-3 bg-white/5 rounded-full text-gray-400 hover:bg-secondary hover:text-primary transition-all hover:scale-110 flex items-center gap-2 pr-4">
+                  <LinkIcon size={18} /> <span className="text-xs font-bold">Connect with us</span>
+               </a>
             </div>
           </div>
           

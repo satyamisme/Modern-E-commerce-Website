@@ -27,7 +27,7 @@ export const APP_CONFIG = {
 
   // Default SEO
   defaultMetaTitle: "LAKKI PHONES | Premium Mobile Store Kuwait",
-  defaultMetaDescription: "Kuwait's premium mobile e-commerce experience featuring an AI-powered shopping assistant.",
+  defaultMetaDescription: "Kuwait's premium mobile e-commerce experience featuring exclusive deals and fast delivery.",
   
   // Store Settings
   taxRate: 0,

@@ -1,4 +1,5 @@
 
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Product, CartItem, ToastMessage, User, Order, Address, Review, AppSettings, CustomerProfile, Warehouse, RoleDefinition, Permission, RoleType } from '../types';
 import { PRODUCTS as INITIAL_PRODUCTS } from '../data/products';
@@ -13,7 +14,14 @@ const DEFAULT_SETTINGS: AppSettings = {
   enableKnet: true,
   enableCreditCard: true,
   deliveryFee: APP_CONFIG.deliveryFee,
-  freeShippingThreshold: APP_CONFIG.freeShippingThreshold
+  freeShippingThreshold: APP_CONFIG.freeShippingThreshold,
+  aiProvider: APP_CONFIG.aiProvider,
+  socialLinks: {
+    instagram: 'https://instagram.com',
+    tiktok: 'https://tiktok.com',
+    facebook: 'https://facebook.com',
+    twitter: 'https://twitter.com'
+  }
 };
 
 // ... (Keep existing INITIAL_WAREHOUSES, INITIAL_ROLES, AVAILABLE_PERMISSIONS, INITIAL_CUSTOMERS constants unchanged) ...
@@ -206,6 +214,11 @@ interface ShopContextType {
   updateSettings: (settings: AppSettings) => void;
   updateCustomer: (customer: CustomerProfile) => void;
   
+  // Warehouse Management
+  addWarehouse: (warehouse: Warehouse) => void;
+  updateWarehouse: (warehouse: Warehouse) => void;
+  removeWarehouse: (id: string) => void;
+
   // Role Management
   addRole: (role: RoleDefinition) => void;
   updateRole: (role: RoleDefinition) => void;
@@ -300,7 +313,12 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // CRM & Inventory State
   const [customers, setCustomers] = useState<CustomerProfile[]>(APP_CONFIG.useMockData ? INITIAL_CUSTOMERS : []);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>(INITIAL_WAREHOUSES);
+  
+  // Warehouses State
+  const [warehouses, setWarehouses] = useState<Warehouse[]>(() => {
+    const saved = localStorage.getItem('lumina_warehouses');
+    return saved ? JSON.parse(saved) : INITIAL_WAREHOUSES;
+  });
 
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -352,6 +370,8 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => { localStorage.setItem('lumina_settings', JSON.stringify(appSettings)); }, [appSettings]);
   useEffect(() => { localStorage.setItem('lumina_orders', JSON.stringify(orders)); }, [orders]);
   useEffect(() => { localStorage.setItem('lumina_roles', JSON.stringify(roles)); }, [roles]);
+  useEffect(() => { localStorage.setItem('lumina_warehouses', JSON.stringify(warehouses)); }, [warehouses]);
+  
   useEffect(() => { 
     if(user) localStorage.setItem('lumina_user', JSON.stringify(user));
     else localStorage.removeItem('lumina_user');
@@ -407,11 +427,6 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const removeFromCart = (productId: string) => {
     setCart(prev => prev.filter(item => {
        // Support removing by raw product ID or compound ID
-       // If product ID matches, we should check if it's the specific variant being removed
-       // For simplicity in this context, we assume the UI passes the ID to remove
-       // If the UI passes simple ID, this removes all variants of that product.
-       // Ideally, UI passes index or unique cart ID. 
-       // For this fix, let's assume we remove all instances if passed simple ID, or specific if complex
        return item.id !== productId;
     }));
     showToast('Removed item from cart', 'info');
@@ -424,8 +439,6 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const product = products.find(p => p.id === productId);
-    // Note: This logic assumes simple product ID match. For variants, we'd need more complex checking.
-    // For now, we trust the stock check in UI.
     
     setCart(prev => prev.map(item => 
       item.id === productId ? { ...item, quantity } : item
@@ -670,6 +683,26 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     showToast('Role deleted', 'info');
   }
 
+  // Warehouse Management Actions
+  const addWarehouse = (warehouse: Warehouse) => {
+    if(!checkPermission('manage_inventory')) { showToast('Permission denied', 'error'); return; }
+    setWarehouses(prev => [...prev, warehouse]);
+    showToast('Location added successfully', 'success');
+  };
+
+  const updateWarehouse = (warehouse: Warehouse) => {
+    if(!checkPermission('manage_inventory')) { showToast('Permission denied', 'error'); return; }
+    setWarehouses(prev => prev.map(w => w.id === warehouse.id ? warehouse : w));
+    showToast('Location updated', 'success');
+  };
+
+  const removeWarehouse = (id: string) => {
+    if(!checkPermission('manage_inventory')) { showToast('Permission denied', 'error'); return; }
+    if(warehouses.length <= 1) { showToast('Cannot remove last location', 'error'); return; }
+    setWarehouses(prev => prev.filter(w => w.id !== id));
+    showToast('Location removed', 'success');
+  };
+
   const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
   return (
@@ -720,7 +753,10 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       addRole,
       updateRole,
       deleteRole,
-      checkPermission
+      checkPermission,
+      addWarehouse,
+      updateWarehouse,
+      removeWarehouse
     }}>
       {children}
     </ShopContext.Provider>

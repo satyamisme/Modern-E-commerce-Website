@@ -63,7 +63,7 @@ API_KEY=your_secret_key_here
 
 Access via `/admin`.
 
-### adding a New Product with AI
+### Adding a New Product with AI
 1.  Click **"+ Add Product"**.
 2.  Enter the **Model Name** (e.g., "Samsung S24 Ultra").
 3.  **Auto-Fill Specs**: Go to the *Specifications* tab and click "Auto-Fill Specs". The AI will fetch technical details.
@@ -95,4 +95,3 @@ Custom keyframes (`fade-in`, `slide-up`, `zoom-in`) are defined in `index.html`.
 
 ## 📱 5. Mobile & PWA
 The app is fully responsive. The `BottomNav` component appears only on mobile screens.
-

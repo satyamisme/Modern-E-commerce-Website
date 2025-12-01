@@ -123,40 +123,23 @@ export const sendMessageToGemini = async (message: string): Promise<string> => {
   }
 };
 
-export const generateProductReview = async (product: Product): Promise<string> => {
-  try {
-    const prompt = `Write a short, engaging, 3-sentence expert summary review for the ${product.name}. 
-      Highlight its key feature: ${product.specs['Main Camera'] || product.specs.camera || 'Performance'}. 
-      End with a recommendation on who should buy it.`;
-
-    if (APP_CONFIG.aiProvider === 'google') {
-        const response = await googleAI.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-        });
-        return response.text || "Review unavailable.";
-    }
-    
-    return await sendMessageToGemini(prompt);
-
-  } catch (error) {
-    console.error("Gemini Review Error:", error);
-    return "Could not generate review at this time.";
-  }
-};
-
 export const generateSEO = async (productName: string, description: string): Promise<{ metaTitle: string, metaDescription: string, keywords: string[] } | null> => {
     try {
         const prompt = `
-            Act as an E-commerce SEO Expert.
+            Act as an E-commerce Copywriter & SEO Expert.
             Generate JSON metadata for: "${productName}".
             Description: "${description.substring(0, 300)}..."
 
+            Requirements:
+            - Title: Catchy, includes "Kuwait", under 60 chars.
+            - Description: Persuasive, mention "Free Delivery", "Official Warranty", under 160 chars.
+            - Keywords: 5-8 high-traffic keywords relevant to Kuwait electronics market.
+
             Format:
             {
-                "metaTitle": "Title under 60 chars",
-                "metaDescription": "Description under 160 chars with USP",
-                "keywords": ["5-8 keywords"]
+                "metaTitle": "Title",
+                "metaDescription": "Description",
+                "keywords": ["keyword1", "keyword2"]
             }
             Return ONLY raw JSON.
         `;
@@ -184,16 +167,20 @@ export const generateSEO = async (productName: string, description: string): Pro
 
 // Search for real image URLs
 export const findProductImage = async (modelName: string): Promise<string[]> => {
+    // Only Google Provider supports Grounding tools directly via SDK in this manner
     if (APP_CONFIG.aiProvider !== 'google') {
         console.warn("Image fetching requires Google Provider for Search Grounding. Returning placeholders.");
         return [];
     }
 
     try {
+        // Use gemini-2.5-flash for best grounding support
         const response = await googleAI.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: `Find 3 high-quality, official promotional image URLs for the smartphone: "${modelName}". 
-            Prefer pure white backgrounds. Return ONLY a raw JSON array of strings.`,
+            Prefer pure white backgrounds. 
+            Do NOT generate a description. 
+            Return ONLY a raw JSON array of strings: ["url1", "url2", "url3"].`,
             config: {
                 tools: [{ googleSearch: {} }]
             }
@@ -201,6 +188,7 @@ export const findProductImage = async (modelName: string): Promise<string[]> => 
 
         let urls: string[] = [];
         
+        // Strategy 1: Extract from Grounding Metadata (Best for Flash)
         if (response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
             response.candidates[0].groundingMetadata.groundingChunks.forEach((chunk: any) => {
                 if (chunk.web?.uri && (chunk.web.uri.match(/\.(jpg|png|webp|jpeg)$/i))) {
@@ -209,7 +197,20 @@ export const findProductImage = async (modelName: string): Promise<string[]> => 
             });
         }
         
-        return Array.from(new Set(urls));
+        // Strategy 2: Parse text if model outputted JSON despite grounding
+        if (urls.length === 0 && response.text) {
+             try {
+                const cleaned = response.text.replace(/```json/g, '').replace(/```/g, '').trim();
+                const parsed = JSON.parse(cleaned);
+                if (Array.isArray(parsed)) {
+                    urls = parsed.filter(u => typeof u === 'string' && u.startsWith('http'));
+                }
+             } catch (e) {
+                 // Ignore parsing error
+             }
+        }
+        
+        return Array.from(new Set(urls)).slice(0, 5);
     } catch (error: any) {
         // Handle 403 or other permission errors gracefully
         if (error.message && (error.message.includes('403') || error.message.includes('PERMISSION_DENIED'))) {

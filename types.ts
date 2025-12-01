@@ -1,4 +1,5 @@
 
+
 export interface Review {
   id: string;
   userId: string;
@@ -61,6 +62,16 @@ export interface Product {
     metaDescription?: string;
     keywords?: string[];
   };
+  
+  // Storefront / Hero Settings
+  isHero?: boolean;
+  heroImage?: string; // Optional override for banner
+  heroTitle?: string;
+  heroSubtitle?: string;
+  
+  // New Storefront Flags
+  isFeatured?: boolean; // For "Featured Collection" rail
+  isTicker?: boolean;   // For "Live Ticker" marquee
 }
 
 export interface CartItem extends Product {
@@ -175,4 +186,11 @@ export interface AppSettings {
   enableCreditCard: boolean;
   deliveryFee: number;
   freeShippingThreshold: number;
+  aiProvider?: 'google' | 'openai' | 'grok' | 'perplexity' | 'deepseek';
+  socialLinks?: {
+    instagram?: string;
+    tiktok?: string;
+    facebook?: string;
+    twitter?: string;
+  };
 }

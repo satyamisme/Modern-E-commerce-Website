@@ -58,7 +58,7 @@ export const About: React.FC = () => {
                   <Users size={24} />
                </div>
                <h3 className="text-xl font-bold text-gray-900 mb-2">Customer First</h3>
-               <p className="text-gray-600">From pre-purchase advice with our AI assistant to after-sales support, your satisfaction is our priority.</p>
+               <p className="text-gray-600">From pre-purchase advice from our experts to after-sales support, your satisfaction is our priority.</p>
             </div>
          </div>
       </div>

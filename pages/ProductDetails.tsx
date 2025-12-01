@@ -1,20 +1,17 @@
 
+
 import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useShop } from '../context/ShopContext';
-import { Star, Plus, ShieldCheck, Zap, Sparkles, Heart, Truck, Check, Share2, Info, ArrowRight, Minus, ArrowLeftRight, ShoppingBag, CheckCircle, AlertCircle, Package, Clock, CreditCard, ChevronRight, PlayCircle, Maximize2 } from 'lucide-react';
-import { generateProductReview } from '../services/geminiService';
+import { Star, Plus, ShieldCheck, Zap, Heart, Truck, Check, Share2, Info, ArrowRight, Minus, ArrowLeftRight, ShoppingBag, CheckCircle, AlertCircle, Package, Clock, CreditCard, ChevronRight, PlayCircle, Maximize2, MessageCircle } from 'lucide-react';
 import { ProductCard } from '../components/ProductCard';
 
 export const ProductDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { products, addToCart, toggleWishlist, isInWishlist, addToRecentlyViewed, addReview, user, addToCompare, isInCompare, removeFromCompare, showToast } = useShop();
+  const { products, addToCart, toggleWishlist, isInWishlist, addToRecentlyViewed, addReview, user, addToCompare, isInCompare, removeFromCompare, showToast, appSettings } = useShop();
   const navigate = useNavigate();
   
   const product = products.find(p => p.id === id);
-  
-  const [aiReview, setAiReview] = useState<string>('');
-  const [loadingReview, setLoadingReview] = useState(false);
   
   const [selectedColor, setSelectedColor] = useState<string>('');
   const [selectedStorage, setSelectedStorage] = useState<string>('');
@@ -26,7 +23,6 @@ export const ProductDetails: React.FC = () => {
 
   useEffect(() => {
     window.scrollTo(0, 0);
-    setAiReview('');
     setQuantity(1);
     if (product) {
       // Initialize with first valid variant or defaults
@@ -105,14 +101,6 @@ export const ProductDetails: React.FC = () => {
      return variant && variant.stock > 0;
   };
 
-  const handleGenerateReview = async () => {
-    if (!product) return;
-    setLoadingReview(true);
-    const review = await generateProductReview(product);
-    setAiReview(review);
-    setLoadingReview(false);
-  };
-
   const handleAddToCart = () => {
       if(!product) return;
       if (quantity > currentStock) {
@@ -125,7 +113,6 @@ export const ProductDetails: React.FC = () => {
           price: currentPrice,
           selectedColor, 
           selectedStorage,
-          // We can generate a specific variant ID here if needed by Cart
       });
   };
 
@@ -137,6 +124,28 @@ export const ProductDetails: React.FC = () => {
     }
     handleAddToCart();
     navigate('/checkout');
+  };
+
+  const handleWhatsAppBuy = () => {
+      if (!product) return;
+      
+      const phone = appSettings.supportPhone.replace(/[^0-9]/g, '');
+      if (!phone) {
+          showToast('Support phone number not configured', 'error');
+          return;
+      }
+
+      const message = `Hi LAKKI PHONES, I'm interested in buying:
+*${product.name}*
+Color: ${selectedColor}
+Storage: ${selectedStorage}
+Price: ${currentPrice} KWD
+Quantity: ${quantity}
+
+Link: ${window.location.href}`;
+
+      const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+      window.open(url, '_blank');
   };
 
   if (!product) return <div>Product not found</div>;
@@ -214,8 +223,6 @@ export const ProductDetails: React.FC = () => {
                                 <button
                                     key={color}
                                     onClick={() => handleColorChange(color)}
-                                    // We allow clicking invalid to prompt user to change storage? Or disable.
-                                    // Better UX: Allow click and auto-switch storage if needed.
                                     className={`w-12 h-12 rounded-full shadow-sm flex items-center justify-center border-2 relative transition-all
                                     ${selectedColor === color ? 'border-primary ring-2 ring-primary/20 scale-110' : 'border-gray-200 hover:border-gray-300'}
                                     ${!available && valid ? 'opacity-50' : ''}
@@ -261,21 +268,6 @@ export const ProductDetails: React.FC = () => {
                       </div>
                   )}
                </div>
-
-               {/* AI Review Summary */}
-               <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-100 p-5 rounded-2xl relative overflow-hidden group">
-                  <div className="flex items-center gap-2 mb-3 relative z-10">
-                     <Sparkles size={18} className="text-purple-600 fill-purple-200" />
-                     <span className="text-sm font-black text-purple-700 uppercase tracking-wide">AI Expert Summary</span>
-                  </div>
-                  {!aiReview ? (
-                     <button onClick={handleGenerateReview} className="text-sm font-bold text-purple-700 hover:bg-purple-100 px-4 py-2 rounded-lg transition-colors border border-purple-200 bg-white/50">
-                        {loadingReview ? 'Analyzing...' : 'Generate Review Summary →'}
-                     </button>
-                  ) : (
-                     <p className="text-sm text-purple-900 leading-relaxed italic bg-white/40 p-3 rounded-lg border border-purple-100">"{aiReview}"</p>
-                  )}
-               </div>
             </div>
 
             {/* Actions (Sticky) */}
@@ -316,6 +308,18 @@ export const ProductDetails: React.FC = () => {
                      </button>
                      <button onClick={handleAddToCart} disabled={!inStock} className="w-full py-4 bg-primary text-white font-bold rounded-xl hover:bg-slate-800 transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2 disabled:opacity-50">
                         <ShoppingBag size={18}/> Add to Cart
+                     </button>
+                     
+                     <div className="relative flex items-center justify-center py-2">
+                        <div className="h-px bg-gray-200 w-full absolute"></div>
+                        <span className="bg-white px-2 text-xs text-gray-400 relative font-medium">OR</span>
+                     </div>
+
+                     <button 
+                        onClick={handleWhatsAppBuy}
+                        className="w-full py-3 bg-[#25D366] text-white font-bold rounded-xl hover:bg-[#128c7e] transition-all shadow-lg shadow-green-200 flex items-center justify-center gap-2"
+                     >
+                        <MessageCircle size={20} /> Buy via WhatsApp
                      </button>
                   </div>
                </div>

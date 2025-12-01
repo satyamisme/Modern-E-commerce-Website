@@ -1,5 +1,6 @@
+
 import React, { useState } from 'react';
-import { Mail, Phone, MapPin, Send, MessageCircle } from 'lucide-react';
+import { Mail, Phone, MapPin, Send, Link as LinkIcon } from 'lucide-react';
 import { useShop } from '../context/ShopContext';
 
 export const Contact: React.FC = () => {
@@ -39,11 +40,11 @@ export const Contact: React.FC = () => {
              </div>
              <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center">
                 <div className="w-12 h-12 bg-green-50 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                   <MessageCircle size={24} />
+                   <LinkIcon size={24} />
                 </div>
-                <h3 className="font-bold text-gray-900 text-lg mb-2">Live Chat</h3>
-                <p className="text-gray-500 mb-4">Chat with Lakki AI</p>
-                <button className="text-accent font-bold hover:underline">Start Chat</button>
+                <h3 className="font-bold text-gray-900 text-lg mb-2">Social & More</h3>
+                <p className="text-gray-500 mb-4">Connect on other platforms</p>
+                <a href="https://linktr.ee/lakkiphones" target="_blank" rel="noreferrer" className="text-accent font-bold hover:underline">Visit Linktree</a>
              </div>
           </div>
 

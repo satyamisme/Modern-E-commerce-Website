@@ -14,6 +14,7 @@ import { OrderKanban } from '../components/admin/OrderKanban';
 import { CustomerCRM } from '../components/admin/CustomerCRM';
 import { InventoryManager } from '../components/admin/InventoryManager';
 import { RoleManager } from '../components/admin/RoleManager';
+import { SystemConfig } from '../components/admin/SystemConfig';
 
 export const AdminDashboard: React.FC = () => {
   const { user, logout, checkPermission } = useShop();
@@ -148,31 +149,7 @@ export const AdminDashboard: React.FC = () => {
             {activeTab === 'customers' && <CustomerCRM />}
             {activeTab === 'inventory' && <InventoryManager />}
             {activeTab === 'roles' && <RoleManager />}
-            {activeTab === 'settings' && (
-               <div className="max-w-4xl space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8">
-                     <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2"><SettingsIcon className="text-primary"/> System Configuration</h2>
-                     <div className="grid grid-cols-2 gap-6">
-                        <div className="p-4 border border-gray-200 rounded-2xl hover:border-primary cursor-pointer transition-colors group">
-                           <h4 className="font-bold text-gray-900 group-hover:text-primary">General Settings</h4>
-                           <p className="text-xs text-gray-500 mt-1">Store info, currency, language</p>
-                        </div>
-                        <div className="p-4 border border-gray-200 rounded-2xl hover:border-primary cursor-pointer transition-colors group">
-                           <h4 className="font-bold text-gray-900 group-hover:text-primary">Roles & Permissions</h4>
-                           <p className="text-xs text-gray-500 mt-1">Manage admin access</p>
-                        </div>
-                        <div className="p-4 border border-gray-200 rounded-2xl hover:border-primary cursor-pointer transition-colors group">
-                           <h4 className="font-bold text-gray-900 group-hover:text-primary">AI Configuration</h4>
-                           <p className="text-xs text-gray-500 mt-1">Model settings, API keys</p>
-                        </div>
-                        <div className="p-4 border border-gray-200 rounded-2xl hover:border-primary cursor-pointer transition-colors group">
-                           <h4 className="font-bold text-gray-900 group-hover:text-primary">Notifications</h4>
-                           <p className="text-xs text-gray-500 mt-1">Email, SMS, Push alerts</p>
-                        </div>
-                     </div>
-                  </div>
-               </div>
-            )}
+            {activeTab === 'settings' && <SystemConfig />}
           </div>
 
        </main>
