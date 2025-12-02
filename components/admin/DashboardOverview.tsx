@@ -1,27 +1,107 @@
 
 import React, { useState, useEffect } from 'react';
-import { DollarSign, ShoppingBag, Package, Users, TrendingUp, ArrowUpRight, Activity, Zap, AlertTriangle, Lightbulb, TrendingDown, Target, Database, ArrowRight, RefreshCw, CheckCircle, Server, Globe } from 'lucide-react';
+import { DollarSign, ShoppingBag, Package, Users, TrendingUp, ArrowUpRight, Activity, Zap, AlertTriangle, Lightbulb, TrendingDown, Target, Database, ArrowRight, RefreshCw, CheckCircle, Server, Globe, Plus, Truck, FileText, ScanLine } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts';
 import { useShop } from '../../context/ShopContext';
 
 const COLORS = ['#1e3a8a', '#d4af37', '#ff6b6b', '#10B981', '#8B5CF6'];
 
 export const DashboardOverview: React.FC = () => {
-  const { orders, products, appSettings, offlineReason, isOffline, retryConnection, connectionDetails } = useShop();
+  const { orders, products, appSettings, offlineReason, isOffline, retryConnection, connectionDetails, customers } = useShop();
   const [isVerifying, setIsVerifying] = useState(false);
 
   // Metrics Calculation
   const totalRevenue = orders.reduce((acc, o) => acc + o.total, 0);
   const totalOrders = orders.length;
   const lowStock = products.filter(p => p.stock < 5).length;
-  const totalCustomers = new Set(orders.map(o => o.customer.email)).size + 124;
+  const totalCustomersCount = customers.length;
 
-  // AI Insights Data
-  const insights = [
-    { type: 'critical', icon: AlertTriangle, text: 'iPhone 15 Pro stock depleting 3x faster than forecast', color: 'bg-red-50 text-red-600 border-red-100' },
-    { type: 'opportunity', icon: Lightbulb, text: 'Samsung A54 bundle increased AOV by 28%', color: 'bg-yellow-50 text-yellow-600 border-yellow-100' },
-    { type: 'info', icon: Zap, text: 'Kuwait City delivery delays +45min avg due to traffic', color: 'bg-blue-50 text-blue-600 border-blue-100' },
-  ];
+  // Real Revenue Data for Chart (Group by Date)
+  const revenueData = React.useMemo(() => {
+      const last7Days = [...Array(7)].map((_, i) => {
+          const d = new Date();
+          d.setDate(d.getDate() - (6 - i));
+          return d.toISOString().split('T')[0];
+      });
+
+      return last7Days.map(date => {
+          const dayOrders = orders.filter(o => o.date === date);
+          const total = dayOrders.reduce((acc, o) => acc + o.total, 0);
+          return { name: date.slice(5), actual: total };
+      });
+  }, [orders]);
+
+  // Real Category Data
+  const categoryData = React.useMemo(() => {
+      const cats: {[key: string]: number} = {};
+      products.forEach(p => {
+          cats[p.category] = (cats[p.category] || 0) + 1;
+      });
+      return Object.entries(cats).map(([name, value]) => ({ name, value }));
+  }, [products]);
+
+  // Top Selling Products (Simple calculation based on frequency in orders)
+  const topProducts = React.useMemo(() => {
+      const productCounts: {[key: string]: number} = {};
+      orders.forEach(o => {
+          o.items.forEach(i => {
+              productCounts[i.name] = (productCounts[i.name] || 0) + i.quantity;
+          });
+      });
+      return Object.entries(productCounts)
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 5)
+          .map(([name, count]) => ({ name, count }));
+  }, [orders]);
+
+  // Dynamic AI Insights Generation
+  const generateInsights = () => {
+      const dynamicInsights = [];
+
+      // 1. Stock Criticality
+      if (lowStock > 0) {
+          dynamicInsights.push({ 
+              type: 'critical', 
+              icon: AlertTriangle, 
+              text: `Stock Alert: ${lowStock} products are running low. Reorder recommended.`, 
+              color: 'bg-red-50 text-red-600 border-red-100' 
+          });
+      }
+
+      // 2. Top Seller
+      if (topProducts.length > 0) {
+          dynamicInsights.push({ 
+              type: 'opportunity', 
+              icon: TrendingUp, 
+              text: `Top Seller: ${topProducts[0].name} is leading sales with ${topProducts[0].count} units.`, 
+              color: 'bg-green-50 text-green-600 border-green-100' 
+          });
+      }
+
+      // 3. Revenue Trend (Simple check of today vs yesterday)
+      const today = new Date().toISOString().split('T')[0];
+      const todayRev = revenueData.find(d => d.name === today.slice(5))?.actual || 0;
+      if (todayRev > 0) {
+           dynamicInsights.push({
+               type: 'info',
+               icon: DollarSign,
+               text: `Sales Active: Generated ${todayRev} ${appSettings.currency} today so far.`,
+               color: 'bg-blue-50 text-blue-600 border-blue-100'
+           });
+      }
+
+      // 4. System Status
+      dynamicInsights.push({ 
+          type: 'system', 
+          icon: Zap, 
+          text: `System Online: Connected to ${isOffline ? 'Local Storage' : 'Cloud Database'}.`, 
+          color: 'bg-indigo-50 text-indigo-600 border-indigo-100' 
+      });
+
+      return dynamicInsights;
+  };
+
+  const insights = generateInsights();
   const [currentInsight, setCurrentInsight] = useState(0);
 
   useEffect(() => {
@@ -29,7 +109,7 @@ export const DashboardOverview: React.FC = () => {
       setCurrentInsight((prev) => (prev + 1) % insights.length);
     }, 5000);
     return () => clearInterval(timer);
-  }, []);
+  }, [insights.length]);
 
   // Auto-Verify when Schema is missing
   useEffect(() => {
@@ -44,30 +124,11 @@ export const DashboardOverview: React.FC = () => {
 
   const handleVerify = async () => {
       setIsVerifying(true);
+      // Clear forced offline flag if user is trying to reconnect manually
+      localStorage.removeItem('lumina_force_offline');
       await retryConnection();
       setIsVerifying(false);
   };
-
-  // Mock Predictive Data
-  const revenueForecastData = [
-    { name: 'Day 1', actual: 4000, forecast: 4100 },
-    { name: 'Day 2', actual: 3000, forecast: 3200 },
-    { name: 'Day 3', actual: 2000, forecast: 2500 },
-    { name: 'Day 4', actual: 2780, forecast: 2800 },
-    { name: 'Day 5', actual: 1890, forecast: 2200 },
-    { name: 'Day 6', actual: 2390, forecast: 2600 },
-    { name: 'Day 7', actual: 3490, forecast: 3500 },
-    { name: 'Day 8', forecast: 3800 },
-    { name: 'Day 9', forecast: 4200 },
-    { name: 'Day 10', forecast: 4500 },
-  ];
-
-  const categoryData = [
-    { name: 'Smartphones', value: 400 },
-    { name: 'Tablets', value: 300 },
-    { name: 'Audio', value: 300 },
-    { name: 'Wearables', value: 200 },
-  ];
 
   const StatCard = ({ title, value, icon: Icon, trend, color, subValue }: any) => (
     <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow relative overflow-hidden group">
@@ -125,7 +186,7 @@ export const DashboardOverview: React.FC = () => {
                 onClick={handleVerify}
                 className="px-4 py-2 bg-gray-100 text-gray-600 font-bold rounded-lg hover:bg-gray-200 transition-colors text-xs flex items-center gap-2"
               >
-                 <RefreshCw size={14} className={isVerifying ? "animate-spin" : ""} /> Re-check
+                 <RefreshCw size={14} className={isVerifying ? "animate-spin" : ""} /> {isOffline && localStorage.getItem('lumina_force_offline') ? 'Go Online' : 'Re-check'}
               </button>
           </div>
       </div>
@@ -161,6 +222,22 @@ export const DashboardOverview: React.FC = () => {
           </div>
       )}
 
+      {/* Quick Actions Toolbar */}
+      <div className="flex gap-4 overflow-x-auto pb-2">
+          <button onClick={() => document.getElementById('products')?.click()} className="flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-xl shadow-lg hover:bg-black transition-colors font-bold text-sm whitespace-nowrap">
+              <Plus size={16} /> Add Product
+          </button>
+          <button onClick={() => document.getElementById('inventory')?.click()} className="flex items-center gap-2 px-6 py-3 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-bold text-sm whitespace-nowrap">
+              <Truck size={16} /> Transfer Stock
+          </button>
+          <button onClick={() => document.getElementById('inventory')?.click()} className="flex items-center gap-2 px-6 py-3 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-bold text-sm whitespace-nowrap">
+              <ScanLine size={16} /> Quick Scan
+          </button>
+          <button onClick={() => document.getElementById('orders')?.click()} className="flex items-center gap-2 px-6 py-3 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-bold text-sm whitespace-nowrap">
+              <FileText size={16} /> View Orders
+          </button>
+      </div>
+
       {/* AI Insights Carousel */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-1">
         <div className={`flex items-center gap-4 p-4 rounded-xl transition-colors duration-500 ${insights[currentInsight].color}`}>
@@ -168,7 +245,7 @@ export const DashboardOverview: React.FC = () => {
               {React.createElement(insights[currentInsight].icon, { size: 24 })}
            </div>
            <div className="flex-1">
-              <span className="text-xs font-bold uppercase tracking-wider opacity-70 mb-0.5 block">{insights[currentInsight].type} INSIGHT</span>
+              <span className="text-xs font-bold uppercase tracking-wider opacity-70 mb-0.5 block">{insights[currentInsight].type.toUpperCase()} INSIGHT</span>
               <p className="font-bold text-sm md:text-base">{insights[currentInsight].text}</p>
            </div>
            <div className="flex gap-1">
@@ -182,33 +259,33 @@ export const DashboardOverview: React.FC = () => {
       {/* KPI Matrix */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard 
-          title="Revenue Forecast" 
+          title="Total Revenue" 
           value={`${totalRevenue.toLocaleString()} ${appSettings.currency}`}
-          subValue="Predicted: 32,450 KWD (+15%)"
+          subValue="Real-time sales"
           icon={Target}
-          trend="98% Accuracy"
+          trend="Live"
           color="bg-indigo-50 text-indigo-600"
         />
         <StatCard 
-          title="Order Throughput" 
+          title="Total Orders" 
           value={totalOrders}
-          subValue="Avg Processing: 42m"
+          subValue="Lifetime volume"
           icon={Package}
           trend="+5.2%"
           color="bg-blue-50 text-blue-600"
         />
         <StatCard 
-          title="Inventory Health" 
-          value="94/100"
-          subValue={`${lowStock} SKU Reorder Alerts`}
+          title="Inventory Alerts" 
+          value={lowStock > 0 ? "Action Needed" : "Healthy"}
+          subValue={`${lowStock} SKUs Low Stock`}
           icon={Activity}
-          trend="Healthy"
-          color="bg-emerald-50 text-emerald-600"
+          trend={lowStock > 0 ? "Critical" : "Stable"}
+          color={lowStock > 0 ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600"}
         />
         <StatCard 
-          title="Customer LTV" 
-          value="245 KWD"
-          subValue="Churn Probability: Low (2%)"
+          title="Total Customers" 
+          value={totalCustomersCount}
+          subValue="Registered & Guests"
           icon={Users}
           trend="+18%"
           color="bg-purple-50 text-purple-600"
@@ -218,31 +295,23 @@ export const DashboardOverview: React.FC = () => {
       {/* Analytics Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Predictive Revenue Chart */}
+        {/* Real Revenue Chart */}
         <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
            <div className="flex justify-between items-center mb-6">
               <div>
                  <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
-                    <TrendingUp size={20} className="text-primary"/> AI Revenue Forecast
+                    <TrendingUp size={20} className="text-primary"/> 7-Day Revenue Trend
                  </h3>
-                 <p className="text-xs text-gray-400 font-medium">Actual vs Predicted Revenue (Next 3 Days)</p>
-              </div>
-              <div className="flex gap-2">
-                 <span className="flex items-center gap-1 text-xs font-bold text-gray-500"><span className="w-2 h-2 rounded-full bg-blue-900"></span> Actual</span>
-                 <span className="flex items-center gap-1 text-xs font-bold text-gray-500"><span className="w-2 h-2 rounded-full bg-blue-300 dashed"></span> Forecast</span>
+                 <p className="text-xs text-gray-400 font-medium">Sales performance over the last week</p>
               </div>
            </div>
            <div className="h-80 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                 <AreaChart data={revenueForecastData}>
+                 <AreaChart data={revenueData}>
                     <defs>
                        <linearGradient id="colorActual" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#1e3a8a" stopOpacity={0.8}/>
                           <stop offset="95%" stopColor="#1e3a8a" stopOpacity={0}/>
-                       </linearGradient>
-                       <linearGradient id="colorForecast" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#93c5fd" stopOpacity={0.5}/>
-                          <stop offset="95%" stopColor="#93c5fd" stopOpacity={0}/>
                        </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
@@ -252,62 +321,61 @@ export const DashboardOverview: React.FC = () => {
                         contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} 
                         cursor={{stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '4 4'}}
                     />
-                    <Area type="monotone" dataKey="forecast" stroke="#93c5fd" strokeWidth={2} strokeDasharray="5 5" fillOpacity={1} fill="url(#colorForecast)" name="Forecast" />
-                    <Area type="monotone" dataKey="actual" stroke="#1e3a8a" strokeWidth={3} fillOpacity={1} fill="url(#colorActual)" name="Actual" />
+                    <Area type="monotone" dataKey="actual" stroke="#1e3a8a" strokeWidth={3} fillOpacity={1} fill="url(#colorActual)" name="Revenue" />
                  </AreaChart>
               </ResponsiveContainer>
            </div>
         </div>
 
-        {/* Category Performance */}
-        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex flex-col">
-           <h3 className="font-bold text-lg text-gray-900 mb-2 flex items-center gap-2">
-              <Activity size={20} className="text-secondary"/> Sales Mix
-           </h3>
-           <p className="text-xs text-gray-400 font-medium mb-6">Revenue distribution by category</p>
-           
-           <div className="h-56 w-full flex-1 relative">
-              <ResponsiveContainer width="100%" height="100%">
-                 <PieChart>
-                    <Pie
-                       data={categoryData}
-                       cx="50%"
-                       cy="50%"
-                       innerRadius={50}
-                       outerRadius={70}
-                       paddingAngle={5}
-                       dataKey="value"
-                    >
-                       {categoryData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                       ))}
-                    </Pie>
-                    <Tooltip />
-                 </PieChart>
-              </ResponsiveContainer>
-              {/* Center Text */}
-              <div className="absolute inset-0 flex items-center justify-center flex-col pointer-events-none">
-                 <span className="text-xl font-black text-gray-900">4</span>
-                 <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Cats</span>
-              </div>
-           </div>
-           
-           <div className="mt-4 space-y-3 overflow-y-auto custom-scrollbar pr-2 max-h-40">
-              {categoryData.map((entry, index) => (
-                 <div key={index} className="flex items-center justify-between text-sm group">
-                    <div className="flex items-center gap-2">
-                       <div className="w-2 h-2 rounded-full transition-all group-hover:scale-125" style={{backgroundColor: COLORS[index % COLORS.length]}}></div>
-                       <span className="text-gray-600 font-medium text-xs">{entry.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                       <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                          <div className="h-full rounded-full" style={{backgroundColor: COLORS[index % COLORS.length], width: `${(entry.value / 1200) * 100}%`}}></div>
-                       </div>
-                       <span className="font-bold text-gray-900 text-xs">{Math.round((entry.value / 1200) * 100)}%</span>
-                    </div>
-                 </div>
-              ))}
-           </div>
+        {/* Top Products & Category Mix */}
+        <div className="space-y-6">
+            <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex flex-col h-[300px]">
+               <h3 className="font-bold text-lg text-gray-900 mb-2 flex items-center gap-2">
+                  <Activity size={20} className="text-secondary"/> Sales Mix
+               </h3>
+               
+               <div className="h-full w-full flex-1 relative">
+                  <ResponsiveContainer width="100%" height="100%">
+                     <PieChart>
+                        <Pie
+                           data={categoryData}
+                           cx="50%"
+                           cy="50%"
+                           innerRadius={50}
+                           outerRadius={70}
+                           paddingAngle={5}
+                           dataKey="value"
+                        >
+                           {categoryData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                           ))}
+                        </Pie>
+                        <Tooltip />
+                     </PieChart>
+                  </ResponsiveContainer>
+                  {/* Center Text */}
+                  <div className="absolute inset-0 flex items-center justify-center flex-col pointer-events-none">
+                     <span className="text-xl font-black text-gray-900">{products.length}</span>
+                     <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">SKUs</span>
+                  </div>
+               </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex-1">
+                <h3 className="font-bold text-lg text-gray-900 mb-4">Top Sellers</h3>
+                <div className="space-y-3">
+                    {topProducts.length === 0 ? (
+                        <p className="text-gray-400 text-sm">No sales data yet.</p>
+                    ) : (
+                        topProducts.map((p, idx) => (
+                            <div key={idx} className="flex justify-between items-center text-sm border-b border-gray-50 pb-2 last:border-0">
+                                <span className="font-medium text-gray-700 truncate max-w-[150px]">{p.name}</span>
+                                <span className="font-bold text-primary">{p.count} sold</span>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
         </div>
       </div>
     </div>

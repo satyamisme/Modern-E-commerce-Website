@@ -1,13 +1,7 @@
 
-
-
-
-
-
-
 import React, { useState, useEffect } from 'react';
 import { useShop } from '../../context/ShopContext';
-import { Save, Globe, DollarSign, Truck, Cpu, CreditCard, Share2, Database, AlertTriangle, CheckCircle, RefreshCw, RotateCcw, Copy, Code, Shield, MessageCircle, CloudDownload } from 'lucide-react';
+import { Save, Globe, DollarSign, Truck, Cpu, CreditCard, Share2, Database, AlertTriangle, CheckCircle, RefreshCw, RotateCcw, Copy, Code, Shield, MessageCircle, CloudDownload, Monitor, Camera, ScanLine } from 'lucide-react';
 import { AppSettings } from '../../types';
 import { updateDatabaseConfig, getDatabaseConfig, resetDatabaseConfig, checkConnection } from '../../lib/supabaseClient';
 import { MASTER_SCHEMA_SQL } from '../../lib/schemaDefinition';
@@ -15,13 +9,17 @@ import { MASTER_SCHEMA_SQL } from '../../lib/schemaDefinition';
 export const SystemConfig: React.FC = () => {
   const { appSettings, updateSettings, showToast, isOffline, offlineReason, seedRoles, seedDatabase } = useShop();
   const [formData, setFormData] = useState<AppSettings>(appSettings);
-  const [activeSection, setActiveSection] = useState<'general' | 'finance' | 'ai' | 'payments' | 'social' | 'database'>('general');
+  const [activeSection, setActiveSection] = useState<'general' | 'finance' | 'ai' | 'payments' | 'social' | 'database' | 'hardware'>('general');
   const [isLoading, setIsLoading] = useState(false);
 
   // Database Config State
   const [dbConfig, setDbConfig] = useState(getDatabaseConfig());
   const [dbInput, setDbInput] = useState({ url: dbConfig.url, key: dbConfig.key });
   const [dbStatus, setDbStatus] = useState<'Checking' | 'Connected' | 'Error' | 'Missing Tables'>('Checking');
+
+  // Camera State
+  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
+  const [scanningTest, setScanningTest] = useState('');
 
   useEffect(() => {
      // If global state says Missing Tables, use that. Otherwise check connection.
@@ -41,6 +39,16 @@ export const SystemConfig: React.FC = () => {
           ...prev,
           socialLinks: {
               ...prev.socialLinks,
+              [field]: value
+          }
+      }));
+  };
+
+  const handleHardwareChange = (field: string, value: any) => {
+      setFormData(prev => ({
+          ...prev,
+          hardwareConfig: {
+              ...prev.hardwareConfig,
               [field]: value
           }
       }));
@@ -90,6 +98,47 @@ export const SystemConfig: React.FC = () => {
       }
   };
 
+  const detectCameras = async () => {
+      if (!window.isSecureContext) {
+          showToast('Camera access requires HTTPS or Localhost.', 'error');
+          return;
+      }
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          showToast('Camera API not supported in this browser.', 'error');
+          return;
+      }
+
+      try {
+          // Explicitly request permission stream to trigger browser prompt
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          
+          // Stop stream immediately as we only needed permission/enumeration
+          stream.getTracks().forEach(track => track.stop());
+
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const videoDevices = devices.filter(d => d.kind === 'videoinput');
+          setCameras(videoDevices);
+          
+          if (videoDevices.length === 0) {
+              showToast('No cameras found on this device.', 'info');
+          } else {
+              showToast(`Found ${videoDevices.length} cameras`, 'success');
+          }
+      } catch (e: any) {
+          if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+              showToast('Access denied. Click the lock icon in your address bar to enable the camera.', 'error');
+          } else if (e.name === 'NotFoundError' || e.name === 'DevicesNotFoundError') {
+              showToast('No camera hardware found.', 'error');
+          } else if (e.name === 'NotReadableError' || e.name === 'TrackStartError') {
+              showToast('Camera is busy or in use by another app.', 'error');
+          } else {
+              console.error("Camera detection error:", e);
+              showToast(`Camera Error: ${e.message}`, 'error');
+          }
+      }
+  };
+
   const SectionButton = ({ id, icon: Icon, label }: any) => (
     <button
         onClick={() => setActiveSection(id)}
@@ -106,6 +155,7 @@ export const SystemConfig: React.FC = () => {
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-2 space-y-1 sticky top-24">
                 <SectionButton id="general" icon={Globe} label="General Store" />
                 <SectionButton id="database" icon={Database} label="Database" />
+                <SectionButton id="hardware" icon={Monitor} label="Hardware & Devices" />
                 <SectionButton id="finance" icon={DollarSign} label="Financials" />
                 <SectionButton id="social" icon={Share2} label="Social & Contact" />
                 <SectionButton id="ai" icon={Cpu} label="AI Intelligence" />
@@ -176,6 +226,64 @@ export const SystemConfig: React.FC = () => {
                         </div>
                     )}
 
+                    {activeSection === 'hardware' && (
+                        <div className="space-y-8">
+                            <div className="bg-gray-50 rounded-2xl p-6 border border-gray-200">
+                                <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><Camera size={20}/> Camera & Scanner Config</h3>
+                                
+                                <div className="space-y-4">
+                                    <div className="flex items-end gap-4">
+                                        <div className="flex-1">
+                                            <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Default Scanner Camera</label>
+                                            <select 
+                                                value={formData.hardwareConfig?.defaultCameraId || ''}
+                                                onChange={e => handleHardwareChange('defaultCameraId', e.target.value)}
+                                                className="w-full p-3 bg-white border border-gray-200 rounded-xl text-sm focus:border-primary outline-none"
+                                            >
+                                                <option value="">-- Auto-Select (Default) --</option>
+                                                {cameras.map(cam => (
+                                                    <option key={cam.deviceId} value={cam.deviceId}>
+                                                        {cam.label || `Camera ${cam.deviceId.slice(0,5)}...`}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <button 
+                                            onClick={detectCameras}
+                                            className="px-4 py-3 bg-blue-50 text-blue-600 font-bold rounded-xl border border-blue-100 hover:bg-blue-100 transition-colors flex items-center gap-2"
+                                        >
+                                            <RefreshCw size={18}/> Detect
+                                        </button>
+                                    </div>
+                                    <p className="text-xs text-gray-500">
+                                        Select the preferred camera to use when scanning barcodes in Inventory Manager.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="bg-gray-50 rounded-2xl p-6 border border-gray-200">
+                                <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><ScanLine size={20}/> USB Scanner Test</h3>
+                                <p className="text-sm text-gray-500 mb-4">
+                                    Click the box below and scan a barcode with your handheld scanner to verify it works.
+                                    Most scanners act as keyboards and press "Enter" after scanning.
+                                </p>
+                                <input 
+                                    type="text" 
+                                    placeholder="Click here and scan..."
+                                    value={scanningTest}
+                                    onChange={e => setScanningTest(e.target.value)}
+                                    className="w-full p-4 bg-white border border-gray-300 rounded-xl text-lg font-mono focus:border-green-500 focus:ring-4 focus:ring-green-100 outline-none transition-all"
+                                />
+                                {scanningTest && (
+                                    <div className="mt-4 p-4 bg-green-50 text-green-800 rounded-xl border border-green-100 flex items-center gap-2">
+                                        <CheckCircle size={20}/> Scanned: <span className="font-mono font-bold">{scanningTest}</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ... (Database Section and others kept same) ... */}
                     {activeSection === 'database' && (
                         <div className="space-y-8">
                             {/* Connection Status */}

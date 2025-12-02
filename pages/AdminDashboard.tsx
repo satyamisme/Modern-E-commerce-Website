@@ -1,10 +1,10 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useShop } from '../context/ShopContext';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { 
    LayoutDashboard, Package, ShoppingBag, Settings as SettingsIcon, 
-   LogOut, Bell, Search, RefreshCw, BarChart2, MessageSquare, Users, Shield, RefreshCcw, Check, X
+   LogOut, Bell, Search, RefreshCw, BarChart2, MessageSquare, Users, Shield, RefreshCcw, Check, X, Menu, Loader2, Printer, Truck
 } from 'lucide-react';
 
 // Import Modular Components
@@ -16,14 +16,63 @@ import { InventoryManager } from '../components/admin/InventoryManager';
 import { RoleManager } from '../components/admin/RoleManager';
 import { SystemConfig } from '../components/admin/SystemConfig';
 import { ReturnsManager } from '../components/admin/ReturnsManager';
-import { SkeletonTable } from '../components/SkeletonLoader';
+import { SupplierManager } from '../components/admin/SupplierManager';
+import { PrintingCenter } from '../components/admin/PrintingCenter';
 
 export const AdminDashboard: React.FC = () => {
   const { user, logout, checkPermission, notifications, markNotificationRead, clearNotifications, isLoading } = useShop();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'products' | 'orders' | 'customers' | 'inventory' | 'roles' | 'settings' | 'returns'>('dashboard');
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [lang, setLang] = useState<'EN' | 'AR'>('EN');
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  
+  // Sync tab with URL query param, defaulting to dashboard
+  const currentTab = searchParams.get('tab') || 'dashboard';
 
+  // Redirect if user accesses a subpath like /admin/products directly to avoid 404s
+  // We normalize everything to query params: /admin?tab=products
+  useEffect(() => {
+      if (location.pathname !== '/admin') {
+          // If trying to access /admin/products, redirect to /admin?tab=products
+          const pathSegment = location.pathname.split('/admin/')[1];
+          if (pathSegment) {
+              navigate(`/admin?tab=${pathSegment}`, { replace: true });
+          } else {
+              navigate('/admin', { replace: true });
+          }
+      }
+  }, [location.pathname, navigate]);
+
+  const setActiveTab = (tab: string) => {
+      navigate(`/admin?tab=${tab}`);
+  };
+
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [lang, setLang] = useState<'EN' | 'AR'>('EN');
+  
+  // Safety timeout for loading
+  const [forceShow, setForceShow] = useState(false);
+  useEffect(() => {
+      const timer = setTimeout(() => {
+          if (isLoading) setForceShow(true);
+      }, 8000); // Force show after 8s if still loading
+      return () => clearTimeout(timer);
+  }, [isLoading]);
+
+  // 1. Loading State Check (Prevents "Refresh to View" bug)
+  if (isLoading && !forceShow) {
+      return (
+          <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+              <div className="flex flex-col items-center gap-3">
+                  <Loader2 className="animate-spin text-primary" size={32} />
+                  <p className="text-gray-500 font-medium">Loading Dashboard...</p>
+                  <button onClick={() => setForceShow(true)} className="text-xs text-blue-500 underline mt-2">Force Load</button>
+              </div>
+          </div>
+      );
+  }
+
+  // 2. Auth Check
   if (!user || (user.role === 'User')) {
      return <Navigate to="/login" replace />;
   }
@@ -38,16 +87,16 @@ export const AdminDashboard: React.FC = () => {
 
      return (
          <button
-            onClick={() => setActiveTab(id)}
+            onClick={() => { setActiveTab(id); setIsSidebarOpen(false); }}
             className={`flex items-center gap-3 w-full px-4 py-3.5 rounded-xl text-sm font-bold transition-all relative group ${
-               activeTab === id 
+               currentTab === id 
                   ? 'bg-primary text-white shadow-lg shadow-slate-950/20' 
                   : 'text-slate-400 hover:text-white hover:bg-slate-800'
             }`}
          >
-            <Icon size={18} className={activeTab === id ? "text-secondary" : "group-hover:text-white transition-colors"}/> 
+            <Icon size={18} className={currentTab === id ? "text-secondary" : "group-hover:text-white transition-colors"}/> 
             {label}
-            {activeTab === id && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-secondary rounded-r-full"></div>}
+            {currentTab === id && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-secondary rounded-r-full"></div>}
          </button>
      );
   };
@@ -55,9 +104,17 @@ export const AdminDashboard: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-50 flex font-sans overflow-hidden">
        
+       {/* Mobile Sidebar Overlay */}
+       {isSidebarOpen && (
+          <div 
+            className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40 md:hidden"
+            onClick={() => setIsSidebarOpen(false)}
+          ></div>
+       )}
+
        {/* Sidebar */}
-       <aside className="w-72 bg-slate-900 text-white flex-shrink-0 flex flex-col fixed inset-y-0 left-0 z-20 transition-all duration-300 shadow-2xl">
-          <div className="p-6 border-b border-gray-800">
+       <aside className={`fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 text-white flex flex-col transition-transform duration-300 ease-in-out shadow-2xl md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+          <div className="p-6 border-b border-gray-800 flex justify-between items-center">
              <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-secondary rounded-xl flex items-center justify-center text-primary shadow-lg shadow-secondary/20">
                    <LayoutDashboard size={20} strokeWidth={3} />
@@ -67,6 +124,9 @@ export const AdminDashboard: React.FC = () => {
                    <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Enterprise v2.0</p>
                 </div>
              </div>
+             <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-gray-400 hover:text-white">
+                <X size={24} />
+             </button>
           </div>
 
           <div className="p-4 space-y-1 flex-1 overflow-y-auto custom-scrollbar">
@@ -77,9 +137,11 @@ export const AdminDashboard: React.FC = () => {
              <NavItem id="products" icon={Package} label="Products & AI" permission="manage_products" />
              <NavItem id="orders" icon={ShoppingBag} label="Order Processing" permission="manage_orders" />
              <NavItem id="inventory" icon={RefreshCw} label="Inventory Sync" permission="manage_inventory" />
+             <NavItem id="suppliers" icon={Truck} label="Suppliers & Retailers" permission="manage_inventory" />
              <NavItem id="returns" icon={RefreshCcw} label="Returns & Refunds" permission="manage_orders" />
              
-             <div className="text-[10px] font-bold text-gray-500 uppercase px-4 py-2 tracking-wider mt-6">CRM</div>
+             <div className="text-[10px] font-bold text-gray-500 uppercase px-4 py-2 tracking-wider mt-6">Tools</div>
+             <NavItem id="printing" icon={Printer} label="Printing Center" permission="manage_inventory" />
              <NavItem id="customers" icon={Users} label="Customer 360" permission="manage_users" />
              
              <div className="text-[10px] font-bold text-gray-500 uppercase px-4 py-2 tracking-wider mt-6">System</div>
@@ -105,27 +167,33 @@ export const AdminDashboard: React.FC = () => {
        </aside>
 
        {/* Main Content Area */}
-       <main className="flex-1 ml-72 flex flex-col h-screen">
+       <main className="flex-1 flex flex-col min-w-0 overflow-hidden md:ml-72 transition-all duration-300 h-screen">
           
           {/* Global Header */}
-          <header className="h-20 bg-white border-b border-gray-100 flex items-center justify-between px-8 sticky top-0 z-30 shadow-sm">
+          <header className="h-20 bg-white border-b border-gray-100 flex items-center justify-between px-4 md:px-8 sticky top-0 z-30 shadow-sm">
              <div className="flex items-center gap-4">
-                <h2 className="text-2xl font-black text-slate-900 capitalize tracking-tight">{activeTab.replace('-', ' ')}</h2>
-                <span className="bg-blue-50 text-blue-600 text-[10px] font-bold px-2 py-1 rounded-full border border-blue-100 uppercase tracking-wide">Live Mode</span>
+                <button 
+                  onClick={() => setIsSidebarOpen(true)}
+                  className="md:hidden p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                   <Menu size={24} />
+                </button>
+                <h2 className="text-xl md:text-2xl font-black text-slate-900 capitalize tracking-tight truncate">{currentTab.replace('-', ' ')}</h2>
+                <span className="hidden sm:inline-block bg-blue-50 text-blue-600 text-[10px] font-bold px-2 py-1 rounded-full border border-blue-100 uppercase tracking-wide">Live Mode</span>
              </div>
              
-             <div className="flex items-center gap-4">
+             <div className="flex items-center gap-2 md:gap-4">
                 {/* AI Search */}
                 <div className="relative group hidden md:block">
                    <input 
                      type="text"
                      placeholder="Ask Lakki AI or search..."
-                     className="pl-4 pr-4 py-2.5 w-80 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm" 
+                     className="pl-4 pr-4 py-2.5 w-64 lg:w-80 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all shadow-sm" 
                    />
                    <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400 border border-gray-200 rounded px-1.5 bg-white">⌘K</div>
                 </div>
                 
-                <div className="h-8 w-px bg-gray-100 mx-2"></div>
+                <div className="h-8 w-px bg-gray-100 mx-2 hidden sm:block"></div>
 
                 <div className="flex items-center gap-3">
                     <button 
@@ -177,17 +245,23 @@ export const AdminDashboard: React.FC = () => {
           </header>
 
           {/* Dynamic Content */}
-          <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-             {isLoading ? <SkeletonTable /> : (
+          <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
+             {isLoading && !forceShow ? (
+                 <div className="flex items-center justify-center h-full text-gray-400">
+                     <Loader2 className="animate-spin" size={32} />
+                 </div>
+             ) : (
                <>
-                 {activeTab === 'dashboard' && <DashboardOverview />}
-                 {activeTab === 'products' && <ProductManager />}
-                 {activeTab === 'orders' && <OrderKanban />}
-                 {activeTab === 'customers' && <CustomerCRM />}
-                 {activeTab === 'inventory' && <InventoryManager />}
-                 {activeTab === 'roles' && <RoleManager />}
-                 {activeTab === 'settings' && <SystemConfig />}
-                 {activeTab === 'returns' && <ReturnsManager />}
+                 {currentTab === 'dashboard' && <DashboardOverview />}
+                 {currentTab === 'products' && <ProductManager />}
+                 {currentTab === 'orders' && <OrderKanban />}
+                 {currentTab === 'customers' && <CustomerCRM />}
+                 {currentTab === 'inventory' && <InventoryManager />}
+                 {currentTab === 'suppliers' && <SupplierManager />}
+                 {currentTab === 'printing' && <PrintingCenter />}
+                 {currentTab === 'roles' && <RoleManager />}
+                 {currentTab === 'settings' && <SystemConfig />}
+                 {currentTab === 'returns' && <ReturnsManager />}
                </>
              )}
           </div>

@@ -18,6 +18,33 @@ export interface Address {
   isDefault?: boolean;
 }
 
+export interface Supplier {
+  id: string;
+  name: string;
+  type: 'Wholesaler' | 'Retailer' | 'Individual' | 'Distributor';
+  contactPerson: string;
+  email: string;
+  phone: string;
+  address: string;
+  notes?: string;
+}
+
+export interface InventoryItem {
+  id: string;
+  imei: string;
+  serial?: string;
+  costPrice: number;
+  condition: 'New' | 'Used' | 'Open Box' | 'Refurbished';
+  status: 'Available' | 'Sold' | 'Reserved' | 'Defective';
+  purchaseDate?: string;
+  supplierId?: string; // Linked to Supplier ID
+  supplier?: string; // Deprecated, keeping for backward compatibility
+  sourceType?: 'Wholesale' | 'Retailer' | 'Store Transfer' | 'Customer Trade-in';
+  locationId?: string; // Track which warehouse this specific item is in
+  purchaseOrderId?: string; // Link to the PO
+  notes?: string;
+}
+
 export interface ProductVariant {
   id: string;
   color: string;
@@ -26,7 +53,8 @@ export interface ProductVariant {
   stock: number;
   sku?: string;
   barcode?: string;
-  imeis?: string[]; // List of specific serials/IMEIs for this variant
+  imeis?: string[]; // Deprecated in favor of inventory array, kept for backward compat
+  inventory?: InventoryItem[]; // Detailed tracking
 }
 
 export interface Product {
@@ -143,6 +171,10 @@ export interface AppSettings {
     facebook?: string;
     twitter?: string;
   };
+  hardwareConfig?: {
+    defaultCameraId?: string;
+    enableKeyboardListener?: boolean;
+  };
 }
 
 export interface CustomerProfile {
@@ -214,6 +246,30 @@ export interface TransferLog {
   quantity: number;
   userId: string;
   timestamp: string;
+}
+
+export interface PurchaseItem {
+  id: string;
+  productId: string;
+  variantId?: string;
+  productName: string;
+  sku: string;
+  quantity: number;
+  costPrice: number;
+  totalCost: number;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  supplierId: string;
+  warehouseId: string;
+  referenceNumber: string; // Manual Ref / Invoice #
+  date: string;
+  status: 'Draft' | 'Ordered' | 'Received';
+  items: PurchaseItem[];
+  totalAmount: number;
+  notes?: string;
+  receivedDate?: string;
 }
 
 export enum SortOption {

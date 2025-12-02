@@ -43,35 +43,56 @@ export const OrderKanban: React.FC = () => {
     setDraggedOrder(null);
   };
 
+  const handleDragEnd = () => {
+      setDraggedOrder(null);
+  };
+
   const printInvoice = (order: Order) => {
       const popup = window.open('', '_blank', 'width=800,height=600');
       if (!popup) { alert('Popup blocked'); return; }
       
-      const itemsHtml = order.items.map(item => `
+      const itemsHtml = order.items?.map(item => {
+        const specs = [];
+        if (item.selectedColor) specs.push(`Color: ${item.selectedColor}`);
+        if (item.selectedStorage) specs.push(`Storage: ${item.selectedStorage}`);
+        
+        let imeiHtml = '';
+        if (item.scannedImeis && item.scannedImeis.length > 0) {
+            imeiHtml = `<div style="font-family: monospace; font-size: 10px; color: #555; margin-top: 4px;">
+                <strong>IMEI/SN:</strong> ${item.scannedImeis.join(', ')}
+            </div>`;
+        }
+
+        return `
         <tr style="border-bottom: 1px solid #eee;">
-            <td style="padding: 10px;">${item.name} <br/><small>${item.selectedColor || ''} ${item.selectedStorage || ''}</small></td>
+            <td style="padding: 10px;">
+                <span style="font-weight: bold;">${item.name}</span>
+                <div style="font-size: 11px; color: #666;">${specs.join(' | ')}</div>
+                ${imeiHtml}
+            </td>
             <td style="padding: 10px; text-align: center;">${item.quantity}</td>
             <td style="padding: 10px; text-align: right;">${item.price} KWD</td>
             <td style="padding: 10px; text-align: right;">${item.price * item.quantity} KWD</td>
         </tr>
-      `).join('');
+      `}).join('') || '';
 
       popup.document.write(`
         <html>
           <head>
             <title>Invoice #${order.id}</title>
             <style>
-              body { font-family: 'Helvetica Neue', Arial, sans-serif; padding: 40px; color: #333; }
+              body { font-family: 'Helvetica Neue', Arial, sans-serif; padding: 40px; color: #333; line-height: 1.5; }
               .header { display: flex; justify-content: space-between; margin-bottom: 40px; border-bottom: 2px solid #000; padding-bottom: 20px; }
-              .logo { font-size: 24px; font-weight: 900; letter-spacing: -1px; }
+              .logo { font-size: 24px; font-weight: 900; letter-spacing: -1px; text-transform: uppercase; }
               .invoice-title { font-size: 32px; font-weight: bold; color: #1e3a8a; text-align: right; }
-              .details { display: flex; justify-content: space-between; margin-bottom: 30px; }
+              .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 40px; }
+              .detail-box { background: #f9f9f9; padding: 15px; border-radius: 8px; }
               table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
-              th { text-align: left; padding: 10px; background: #f9f9f9; font-size: 12px; text-transform: uppercase; border-bottom: 2px solid #ddd; }
+              th { text-align: left; padding: 12px 10px; background: #f1f5f9; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; font-weight: bold; border-bottom: 2px solid #ddd; }
               .totals { float: right; width: 300px; }
-              .total-row { display: flex; justify-content: space-between; padding: 5px 0; }
-              .grand-total { font-size: 20px; font-weight: bold; border-top: 2px solid #000; padding-top: 10px; margin-top: 10px; }
-              .footer { margin-top: 60px; text-align: center; font-size: 12px; color: #999; border-top: 1px solid #eee; padding-top: 20px; }
+              .total-row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 14px; }
+              .grand-total { font-size: 18px; font-weight: bold; border-top: 2px solid #000; padding-top: 10px; margin-top: 10px; }
+              .footer { margin-top: 80px; text-align: center; font-size: 11px; color: #888; border-top: 1px solid #eee; padding-top: 20px; }
             </style>
           </head>
           <body onload="window.print()">
@@ -82,24 +103,25 @@ export const OrderKanban: React.FC = () => {
                </div>
                <div>
                   <div class="invoice-title">INVOICE</div>
-                  <div style="text-align: right; margin-top: 5px;">
+                  <div style="text-align: right; margin-top: 5px; font-size: 14px;">
                      <strong>#${order.id}</strong><br/>
-                     ${order.date}
+                     Date: ${order.date}
                   </div>
                </div>
             </div>
 
-            <div class="details">
-               <div>
-                  <strong>Bill To:</strong><br/>
-                  ${order.customer.name}<br/>
-                  ${order.customer.phone}<br/>
-                  ${order.customer.address}
+            <div class="details-grid">
+               <div class="detail-box">
+                  <strong style="display:block; margin-bottom: 5px; color: #666; font-size: 12px; text-transform: uppercase;">Bill To</strong>
+                  <div style="font-weight: bold; font-size: 16px;">${order.customer.name}</div>
+                  <div>${order.customer.phone}</div>
+                  <div style="font-size: 13px; margin-top: 2px;">${order.customer.address}</div>
                </div>
-               <div style="text-align: right;">
-                  <strong>Status:</strong> ${order.status}<br/>
-                  <strong>Payment:</strong> ${order.paymentMethod}<br/>
-                  <strong>Terms:</strong> Due on Receipt
+               <div class="detail-box" style="text-align: right;">
+                  <strong style="display:block; margin-bottom: 5px; color: #666; font-size: 12px; text-transform: uppercase;">Order Details</strong>
+                  <div>Status: <strong>${order.status}</strong></div>
+                  <div>Payment: <strong>${order.paymentMethod}</strong></div>
+                  <div>Terms: <strong>Due on Receipt</strong></div>
                </div>
             </div>
 
@@ -109,7 +131,7 @@ export const OrderKanban: React.FC = () => {
                      <th>Item Description</th>
                      <th style="text-align: center;">Qty</th>
                      <th style="text-align: right;">Unit Price</th>
-                     <th style="text-align: right;">Amount</th>
+                     <th style="text-align: right;">Total</th>
                   </tr>
                </thead>
                <tbody>
@@ -127,7 +149,7 @@ export const OrderKanban: React.FC = () => {
                   <span>${appSettings.deliveryFee} KWD</span>
                </div>
                <div class="total-row grand-total">
-                  <span>Total:</span>
+                  <span>Total Due:</span>
                   <span>${order.total} KWD</span>
                </div>
             </div>
@@ -136,7 +158,8 @@ export const OrderKanban: React.FC = () => {
 
             <div class="footer">
                Thank you for shopping with Lakki Phones.<br/>
-               For support, contact support@lakkiphones.com
+               For support, contact support@lakkiphones.com<br/>
+               This is a computer generated invoice.
             </div>
           </body>
         </html>
@@ -186,7 +209,8 @@ export const OrderKanban: React.FC = () => {
                            key={order.id}
                            draggable
                            onDragStart={(e) => handleDragStart(e, order.id)}
-                           className={`bg-white p-4 rounded-xl shadow-sm border border-gray-200 cursor-grab active:cursor-grabbing hover:shadow-md transition-all group ${draggedOrder === order.id ? 'opacity-50 scale-95' : 'opacity-100'}`}
+                           onDragEnd={handleDragEnd}
+                           className={`bg-white p-4 rounded-xl shadow-sm border border-gray-200 cursor-grab active:cursor-grabbing hover:shadow-md transition-all group ${draggedOrder === order.id ? 'opacity-50 scale-95 ring-2 ring-primary ring-offset-2' : 'opacity-100'}`}
                         >
                            <div className="flex justify-between items-start mb-3">
                               <span className="text-[10px] font-bold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded font-mono">{order.id}</span>
@@ -197,11 +221,11 @@ export const OrderKanban: React.FC = () => {
                            
                            <div className="flex items-center gap-3 mb-4">
                               <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-700 to-slate-900 text-white flex items-center justify-center text-xs font-bold shadow-sm">
-                                 {order.customer.name.charAt(0)}
+                                 {order.customer?.name ? order.customer.name.charAt(0) : '?'}
                               </div>
                               <div className="overflow-hidden">
-                                 <p className="text-sm font-bold text-gray-900 truncate">{order.customer.name}</p>
-                                 <p className="text-[10px] text-gray-500 truncate">{order.items.length} items • {order.paymentMethod}</p>
+                                 <p className="text-sm font-bold text-gray-900 truncate">{order.customer?.name || 'Unknown'}</p>
+                                 <p className="text-[10px] text-gray-500 truncate">{order.items?.length || 0} items • {order.paymentMethod}</p>
                               </div>
                            </div>
 

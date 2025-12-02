@@ -1,35 +1,47 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useShop } from '../context/ShopContext';
 import { Smartphone, Mail, Lock, ArrowRight, Eye, EyeOff, ShieldCheck, Zap } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 
 export const Login: React.FC = () => {
-  const { login, showToast } = useShop();
+  const { login, showToast, user } = useShop();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  // Automatic Redirection based on Role
+  useEffect(() => {
+    if (user) {
+        const adminRoles = ['Super Admin', 'Shop Admin', 'Admin', 'Sales', 'Warehouse Staff'];
+        const isStaff = adminRoles.includes(user.role) || user.email.includes('admin') || user.email.includes('super');
+        
+        if (isStaff) {
+            navigate('/admin');
+        } else {
+            navigate('/');
+        }
+    }
+  }, [user, navigate]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    
+    // Intercept Super Admin login to use robust handler if they type it manually
+    if (email.trim() === 'superadmin@lakkiphones.com') {
+        await handleAdminShortcut();
+        return;
+    }
+
     await login(email.trim(), password);
     setIsLoading(false);
-    
-    // Auth state listener in ShopContext will handle redirect generally, 
-    // but explicit navigation helps UX response time here.
-    if (email.includes('admin') || email.includes('super')) {
-       navigate('/admin');
-    } else {
-       navigate('/account');
-    }
+    // Navigation is handled by the useEffect above when 'user' state updates
   };
 
   const handleAdminShortcut = async () => {
-    // Specific credentials requested by user
     const adminEmail = 'superadmin@lakkiphones.com';
     const adminPass = 'Aa100200';
     
@@ -37,10 +49,10 @@ export const Login: React.FC = () => {
     showToast('Authenticating Super Admin...', 'info');
     
     try {
-        // 1. Try Login directly (with trimmed credentials)
+        // 1. Try Online Login
         const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ 
-            email: adminEmail.trim(), 
-            password: adminPass.trim() 
+            email: adminEmail, 
+            password: adminPass 
         });
 
         if (!signInError && signInData.session) {
@@ -49,83 +61,52 @@ export const Login: React.FC = () => {
             return;
         }
 
-        // 2. Handle Errors
+        // 2. If Login Failed, Try Registration (Auto-Setup for fresh DB)
         if (signInError) {
-           // Network Error -> Force Offline
-           if (signInError.message && (signInError.message.includes('Failed to fetch') || signInError.message.includes('network'))) {
-               throw new Error('NETWORK_FAIL');
-           }
-
-           // If Login Failed (Invalid credentials), Check if we need to Register (Auto-Setup)
-           // Or if the error implies the user doesn't exist
-           if (signInError.message.includes('Invalid login credentials') || signInError.message.includes('not found')) {
-               console.log("User not found or wrong password. Attempting creation...");
-               
-               const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-                  email: adminEmail.trim(),
-                  password: adminPass.trim(),
-                  options: {
-                    data: { 
-                      name: 'Super Admin', 
-                      role: 'Super Admin' 
-                    }
-                  }
-               });
-               
-               if (signUpError) {
-                   // If registration fails (e.g., "invalid email", "already registered", "password weak")
-                   // We MUST force offline mode so the user isn't locked out of their own demo.
-                   console.warn("Registration failed:", signUpError.message);
-                   showToast(`Online setup issue: ${signUpError.message}. Using Offline Mode.`, 'info');
-                   throw new Error('FORCE_OFFLINE');
-               }
-               
-               if (signUpData.session) {
-                   showToast('Admin account created! Signing in...', 'success');
-                   navigate('/admin');
-                   return;
-               } else {
-                   // Account created but maybe email confirmation needed
-                   showToast('Account created. Checking session...', 'info');
-                   // If no session, force offline so they can work
-                   if (!signUpData.session) throw new Error('FORCE_OFFLINE');
-                   return;
-               }
-           }
-
-           // Other Errors (like "Email address invalid" on login attempt)
-           console.error("Login Failed:", signInError);
-           // If it's an invalid email format on login, force offline
-           if (signInError.message.includes('invalid')) {
-               throw new Error('FORCE_OFFLINE');
-           }
-           showToast(`Login Failed: ${signInError.message}`, 'error');
-        }
-    } catch (err: any) {
-        // EMERGENCY FALLBACK for Network Issues, Password Mismatch, or Validation Errors
-        if (err.message === 'NETWORK_FAIL' || err.message === 'FORCE_OFFLINE' || err.message.includes('invalid')) {
-            
-            // Manually inject session for ShopContext to pick up
-            const offlineUser = {
-                id: 'offline-admin',
-                name: 'Super Admin (Offline)',
+             console.log("Online login failed, attempting registration...");
+             
+             const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
                 email: adminEmail,
-                role: 'Super Admin',
-                avatar: `https://ui-avatars.com/api/?name=Super+Admin`,
-                addresses: []
-            };
-            localStorage.setItem('lumina_user', JSON.stringify(offlineUser));
-            
-            // Force reload to pick up local storage
-            setTimeout(() => {
-                window.location.href = '#/admin';
-                window.location.reload();
-            }, 500);
-            return;
+                password: adminPass,
+                options: { data: { name: 'Super Admin', role: 'Super Admin' } }
+             });
+
+             if (signUpData.session) {
+                 showToast('Admin account created! Signing in...', 'success');
+                 navigate('/admin');
+                 return;
+             }
+             
+             // If we reach here, both Login and Registration failed.
+             console.warn("Online auth failed. Activating Offline Mode.");
+             throw new Error('FORCE_OFFLINE');
         }
 
-        console.error("Admin Login Exception:", err);
-        showToast(err.message || "Authentication failed", 'error');
+    } catch (err: any) {
+        // 3. Force Offline Mode & PERSIST IT
+        console.log("Entering Offline Admin Session...");
+        
+        // Flag to tell ShopContext to stay offline on reload
+        localStorage.setItem('lumina_force_offline', 'true');
+
+        // Manually inject session for ShopContext to pick up immediately
+        const offlineUser = {
+            id: 'offline-admin',
+            name: 'Super Admin (Offline)',
+            email: adminEmail,
+            role: 'Super Admin',
+            avatar: `https://ui-avatars.com/api/?name=Super+Admin`,
+            addresses: []
+        };
+        localStorage.setItem('lumina_user', JSON.stringify(offlineUser));
+        
+        showToast("Using Offline Mode...", "success");
+        
+        // Force reload to pick up local storage state cleanly and re-init context with isOffline=true
+        setTimeout(() => {
+            window.location.href = '#/admin';
+            window.location.reload();
+        }, 500);
     } finally {
         setIsLoading(false);
     }

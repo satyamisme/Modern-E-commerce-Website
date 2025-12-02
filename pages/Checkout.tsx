@@ -62,7 +62,9 @@ export const Checkout: React.FC = () => {
          });
 
          // 2. Build the Message
-         const phone = appSettings.supportPhone.replace(/[^0-9]/g, '');
+         const phoneStr = appSettings?.supportPhone || '';
+         const phone = phoneStr.replace(/[^0-9]/g, '');
+         
          const itemsList = cart.map(i => `- ${i.quantity}x ${i.name} (${i.selectedColor || 'Std'}, ${i.selectedStorage || 'Std'})`).join('\n');
          
          const message = `*New Order: ${orderRef}*\n` +

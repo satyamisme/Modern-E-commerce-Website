@@ -163,7 +163,9 @@ export const ProductDetails: React.FC = () => {
           return;
       }
       
-      const phone = appSettings.supportPhone.replace(/[^0-9]/g, '');
+      const phoneStr = appSettings?.supportPhone || '';
+      const phone = phoneStr.replace(/[^0-9]/g, '');
+      
       if (!phone) {
           showToast('Support phone number not configured', 'error');
           return;

@@ -12,6 +12,15 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ProductCard } from '../components/ProductCard';
 import { SkeletonCard } from '../components/SkeletonLoader';
 
+const BrandPill: React.FC<{ name: string, icon: any }> = ({ name, icon: Icon }) => (
+    <Link to={`/shop?brand=${name}`} className="flex flex-col items-center gap-2 group min-w-[70px] cursor-pointer">
+        <div className="w-14 h-14 rounded-2xl bg-white border border-gray-100 shadow-sm flex items-center justify-center group-hover:border-primary group-hover:shadow-md transition-all duration-300">
+            <Icon size={24} className="text-gray-400 group-hover:text-primary transition-colors"/>
+        </div>
+        <span className="text-[10px] font-bold text-gray-600 group-hover:text-primary uppercase tracking-wide">{name}</span>
+    </Link>
+);
+
 export const Home: React.FC = () => {
   const { products, recentlyViewed, isLoading } = useShop();
   const navigate = useNavigate();
@@ -42,15 +51,6 @@ export const Home: React.FC = () => {
     { name: 'Sony', icon: Headphones },
     { name: 'OnePlus', icon: Smartphone }
   ];
-
-  const BrandPill = ({ name, icon: Icon }: { name: string, icon: any }) => (
-      <Link to={`/shop?brand=${name}`} className="flex flex-col items-center gap-2 group min-w-[70px] cursor-pointer">
-          <div className="w-14 h-14 rounded-2xl bg-white border border-gray-100 shadow-sm flex items-center justify-center group-hover:border-primary group-hover:shadow-md transition-all duration-300">
-              <Icon size={24} className="text-gray-400 group-hover:text-primary transition-colors"/>
-          </div>
-          <span className="text-[10px] font-bold text-gray-600 group-hover:text-primary uppercase tracking-wide">{name}</span>
-      </Link>
-  );
 
   return (
     <div className="min-h-screen bg-gray-50/50 pb-20 font-sans">

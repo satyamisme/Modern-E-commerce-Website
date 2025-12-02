@@ -1,17 +1,22 @@
 
 import React, { useState } from 'react';
 import { useShop } from '../../context/ShopContext';
-import { Search, User, Mail, Phone, Calendar, DollarSign, ShoppingBag, Edit, ShieldCheck, Star, X } from 'lucide-react';
+import { Search, User, Mail, Phone, Calendar, DollarSign, ShoppingBag, Edit, ShieldCheck, Star, X, Plus, Trash2 } from 'lucide-react';
 import { CustomerProfile } from '../../types';
 
 export const CustomerCRM: React.FC = () => {
-  const { customers, updateCustomer, showToast } = useShop();
+  const { customers, updateCustomer, deleteCustomer, showToast } = useShop();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerProfile | null>(null);
+  
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newCustomer, setNewCustomer] = useState<Partial<CustomerProfile>>({
+      name: '', email: '', phone: '', segment: 'New'
+  });
 
   const filteredCustomers = customers.filter(c => 
-    c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.email.toLowerCase().includes(searchTerm.toLowerCase())
+    (c.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (c.email || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const handleSegmentChange = (segment: CustomerProfile['segment']) => {
@@ -23,8 +28,39 @@ export const CustomerCRM: React.FC = () => {
     }
   };
 
+  const handleCreateCustomer = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!newCustomer.name || !newCustomer.email) return;
+      
+      const customer: CustomerProfile = {
+          id: `C-${Date.now()}`,
+          name: newCustomer.name,
+          email: newCustomer.email,
+          phone: newCustomer.phone || '',
+          joinDate: new Date().toISOString().split('T')[0],
+          totalSpent: 0,
+          ordersCount: 0,
+          segment: 'New',
+          lastOrderDate: '',
+          avatar: `https://ui-avatars.com/api/?name=${newCustomer.name}`,
+          notes: 'Manually added by Admin'
+      };
+      
+      updateCustomer(customer);
+      setShowAddModal(false);
+      setNewCustomer({ name: '', email: '', phone: '', segment: 'New' });
+      showToast('Customer created successfully', 'success');
+  };
+
+  const handleDelete = () => {
+      if (selectedCustomer && confirm(`Are you sure you want to delete ${selectedCustomer.name}? This cannot be undone.`)) {
+          deleteCustomer(selectedCustomer.id);
+          setSelectedCustomer(null);
+      }
+  };
+
   return (
-    <div className="flex h-[calc(100vh-140px)] gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="flex h-[calc(100vh-140px)] gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500 relative">
       
       {/* List View */}
       <div className={`flex-1 bg-white rounded-3xl shadow-sm border border-gray-100 flex flex-col overflow-hidden transition-all ${selectedCustomer ? 'hidden md:flex md:w-1/2 lg:w-2/5' : 'w-full'}`}>
@@ -40,9 +76,12 @@ export const CustomerCRM: React.FC = () => {
                  className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:border-primary outline-none"
               />
            </div>
-           <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-gray-400">{filteredCustomers.length} Users</span>
-           </div>
+           <button 
+              onClick={() => setShowAddModal(true)}
+              className="p-2.5 bg-primary text-white rounded-xl hover:bg-slate-800 transition-colors shadow-lg"
+           >
+              <Plus size={20} />
+           </button>
         </div>
         
         {/* List */}
@@ -103,9 +142,14 @@ export const CustomerCRM: React.FC = () => {
                         </div>
                      </div>
                   </div>
-                  <button onClick={() => setSelectedCustomer(null)} className="p-2 hover:bg-gray-100 rounded-full md:hidden">
-                     <X size={20} />
-                  </button>
+                  <div className="flex gap-2">
+                      <button onClick={handleDelete} className="p-2 hover:bg-red-50 text-red-500 rounded-full" title="Delete Customer">
+                         <Trash2 size={20} />
+                      </button>
+                      <button onClick={() => setSelectedCustomer(null)} className="p-2 hover:bg-gray-100 rounded-full md:hidden">
+                         <X size={20} />
+                      </button>
+                  </div>
                </div>
 
                {/* Stats Grid */}
@@ -163,6 +207,57 @@ export const CustomerCRM: React.FC = () => {
                <p className="text-gray-500 max-w-xs mx-auto">Click on a customer from the list to view their 360° profile and history.</p>
             </div>
          </div>
+      )}
+
+      {/* Add Customer Modal */}
+      {showAddModal && (
+          <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+              <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+                  <div className="flex justify-between items-center mb-6">
+                      <h3 className="text-xl font-bold text-gray-900">Add New Customer</h3>
+                      <button onClick={() => setShowAddModal(false)} className="p-2 hover:bg-gray-100 rounded-full"><X size={20}/></button>
+                  </div>
+                  <form onSubmit={handleCreateCustomer} className="space-y-4">
+                      <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-1">Full Name</label>
+                          <input 
+                              type="text" 
+                              required
+                              value={newCustomer.name}
+                              onChange={e => setNewCustomer({...newCustomer, name: e.target.value})}
+                              className="w-full p-3 border border-gray-200 rounded-xl outline-none focus:border-primary"
+                              placeholder="Ahmed Al-Sabah"
+                          />
+                      </div>
+                      <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-1">Email</label>
+                          <input 
+                              type="email" 
+                              required
+                              value={newCustomer.email}
+                              onChange={e => setNewCustomer({...newCustomer, email: e.target.value})}
+                              className="w-full p-3 border border-gray-200 rounded-xl outline-none focus:border-primary"
+                              placeholder="ahmed@example.com"
+                          />
+                      </div>
+                      <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-1">Phone</label>
+                          <input 
+                              type="tel" 
+                              value={newCustomer.phone}
+                              onChange={e => setNewCustomer({...newCustomer, phone: e.target.value})}
+                              className="w-full p-3 border border-gray-200 rounded-xl outline-none focus:border-primary"
+                              placeholder="+965 9999 9999"
+                          />
+                      </div>
+                      <div className="pt-4">
+                          <button type="submit" className="w-full py-3 bg-primary text-white font-bold rounded-xl hover:bg-slate-800 transition-colors shadow-lg">
+                              Create Profile
+                          </button>
+                      </div>
+                  </form>
+              </div>
+          </div>
       )}
     </div>
   );

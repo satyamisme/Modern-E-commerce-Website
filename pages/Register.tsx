@@ -18,7 +18,7 @@ export const Register: React.FC = () => {
     setIsLoading(true);
     await register(name, email, password);
     setIsLoading(false);
-    navigate('/account');
+    navigate('/');
   };
 
   return (

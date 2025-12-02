@@ -161,6 +161,7 @@ create table if not exists public.app_settings (
   "enableWhatsAppPayment" boolean default true,
   "aiProvider" text,
   "socialLinks" jsonb,
+  "hardwareConfig" jsonb,
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
@@ -172,6 +173,9 @@ begin
   end if;
   if not exists (select 1 from information_schema.columns where table_name='app_settings' and column_name='socialLinks') then
     alter table public.app_settings add column "socialLinks" jsonb;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name='app_settings' and column_name='hardwareConfig') then
+    alter table public.app_settings add column "hardwareConfig" jsonb;
   end if;
 end $$;
 
@@ -199,14 +203,40 @@ create table if not exists public.transfer_logs (
   timestamp timestamp with time zone default timezone('utc'::text, now())
 );
 
--- 9. STORAGE & BUCKETS
--- Attempt to create the storage bucket. 
--- Note: Requires pg_net or similar in some setups, but this insert works for standard Supabase Storage schema.
+-- 9. SUPPLIERS
+create table if not exists public.suppliers (
+  id text primary key,
+  name text,
+  type text,
+  "contactPerson" text,
+  email text,
+  phone text,
+  address text,
+  notes text,
+  created_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- 10. PURCHASE ORDERS
+create table if not exists public.purchase_orders (
+  id text primary key,
+  "supplierId" text,
+  "warehouseId" text,
+  "referenceNumber" text,
+  date text,
+  status text,
+  items jsonb,
+  "totalAmount" numeric,
+  notes text,
+  "receivedDate" text,
+  created_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- 11. STORAGE & BUCKETS
 insert into storage.buckets (id, name, public)
 values ('product-images', 'product-images', true)
 on conflict (id) do nothing;
 
--- Storage Policies (Idempotent)
+-- Storage Policies
 do $$
 begin
   if not exists (select 1 from pg_policies where policyname = 'Public Access') then
@@ -234,7 +264,7 @@ values
 ('role-warehouse', 'Warehouse Staff', ARRAY['manage_inventory'], true, 'Inventory and stock transfer')
 on conflict (id) do nothing;
 
--- Enable RLS (Safe to run multiple times)
+-- Enable RLS
 alter table products enable row level security;
 alter table orders enable row level security;
 alter table app_settings enable row level security;
@@ -243,8 +273,10 @@ alter table customers enable row level security;
 alter table warehouses enable row level security;
 alter table returns enable row level security;
 alter table transfer_logs enable row level security;
+alter table suppliers enable row level security;
+alter table purchase_orders enable row level security;
 
--- Policies (Drop and Recreate to ensure correctness)
+-- Policies
 drop policy if exists "Public Read" on products;
 create policy "Public Read" on products for select using (true);
 drop policy if exists "Admin Write" on products;
@@ -284,4 +316,14 @@ drop policy if exists "Public Read TransferLogs" on transfer_logs;
 create policy "Public Read TransferLogs" on transfer_logs for select using (true);
 drop policy if exists "Admin Write TransferLogs" on transfer_logs;
 create policy "Admin Write TransferLogs" on transfer_logs for all using (true);
-`;
+
+drop policy if exists "Public Read Suppliers" on suppliers;
+create policy "Public Read Suppliers" on suppliers for select using (true);
+drop policy if exists "Admin Write Suppliers" on suppliers;
+create policy "Admin Write Suppliers" on suppliers for all using (true);
+
+drop policy if exists "Public Read POs" on purchase_orders;
+create policy "Public Read POs" on purchase_orders for select using (true);
+drop policy if exists "Admin Write POs" on purchase_orders;
+create policy "Admin Write POs" on purchase_orders for all using (true);
+`
