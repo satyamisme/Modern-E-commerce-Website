@@ -1,4 +1,5 @@
 
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Product, CartItem, ToastMessage, User, Order, Address, Review, AppSettings, CustomerProfile, Warehouse, RoleDefinition, Permission, RoleType, ReturnRequest, Notification } from '../types';
 import { PRODUCTS as INITIAL_PRODUCTS } from '../data/products';
@@ -118,6 +119,8 @@ interface ShopContextType {
   deleteProduct: (productId: string) => void;
   updateProduct: (product: Product) => void;
   addProduct: (product: Product) => void;
+  bulkUpsertProducts: (products: Product[]) => Promise<void>;
+  uploadImage: (file: File) => Promise<string | null>;
   updateSettings: (settings: AppSettings) => void;
   updateCustomer: (customer: CustomerProfile) => void;
   
@@ -131,6 +134,7 @@ interface ShopContextType {
   deleteRole: (roleId: string) => void;
   checkPermission: (permissionKey: string) => boolean;
   seedRoles: () => Promise<void>;
+  seedDatabase: () => Promise<void>;
 
   addReturnRequest: (request: Omit<ReturnRequest, 'id' | 'date' | 'status'>) => void;
   updateReturnStatus: (id: string, status: ReturnRequest['status']) => void;
@@ -141,9 +145,9 @@ interface ShopContextType {
   totalAmount: number;
   toast: ToastMessage | null;
   showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
-  login: (email: string) => void;
+  login: (email: string, password?: string) => Promise<void>;
   logout: () => void;
-  register: (name: string, email: string) => void;
+  register: (name: string, email: string, password?: string) => Promise<void>;
 }
 
 const ShopContext = createContext<ShopContextType | undefined>(undefined);
@@ -193,6 +197,61 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setTimeout(() => setToast(current => current?.id === id ? null : current), 3000);
   };
 
+  // --- Auth Subscription ---
+  useEffect(() => {
+    if (!isOffline) {
+        // Restore session on load
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session?.user) {
+                const meta = session.user.user_metadata || {};
+                setUser({
+                    id: session.user.id,
+                    name: meta.name || session.user.email?.split('@')[0] || 'User',
+                    email: session.user.email || '',
+                    role: meta.role || 'User',
+                    avatar: meta.avatar || `https://ui-avatars.com/api/?name=${meta.name || 'U'}`,
+                    addresses: []
+                });
+            }
+        });
+
+        // Listen for changes
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            if (event === 'SIGNED_IN' && session?.user) {
+                const meta = session.user.user_metadata || {};
+                setUser({
+                    id: session.user.id,
+                    name: meta.name || session.user.email?.split('@')[0] || 'User',
+                    email: session.user.email || '',
+                    role: meta.role || 'User',
+                    avatar: meta.avatar || `https://ui-avatars.com/api/?name=${meta.name || 'U'}`,
+                    addresses: []
+                });
+            } else if (event === 'SIGNED_OUT') {
+                setUser(null);
+            }
+        });
+
+        return () => subscription.unsubscribe();
+    }
+  }, [isOffline]);
+
+  const sanitizeProduct = (p: Product) => {
+      const clean: any = { ...p };
+      delete clean.selectedColor;
+      delete clean.selectedStorage;
+      delete clean.quantity;
+      clean.originalPrice = clean.originalPrice || null;
+      clean.costPrice = clean.costPrice || null;
+      clean.monthlyPrice = clean.monthlyPrice || null;
+      clean.imageSeed = clean.imageSeed || null;
+      clean.reviews = clean.reviews || [];
+      clean.variants = clean.variants || [];
+      clean.specs = clean.specs || {};
+      clean.seo = clean.seo || {};
+      return clean;
+  };
+
   const seedRoles = async () => {
       console.log("Seeding default roles...");
       setRoles(INITIAL_ROLES); 
@@ -208,9 +267,43 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
   };
 
+  const seedDatabase = async () => {
+      if (isOffline) {
+          showToast('Cannot seed in offline mode', 'error');
+          return;
+      }
+      setIsLoading(true);
+      showToast('Seeding Database with Demo Data...', 'info');
+      try {
+          // Seed Products
+          const cleanProducts = INITIAL_PRODUCTS.map(sanitizeProduct);
+          const { error: prodError } = await supabase.from('products').upsert(cleanProducts);
+          if (prodError) throw prodError;
+
+          // Seed Warehouses
+          const { error: whError } = await supabase.from('warehouses').upsert(INITIAL_WAREHOUSES);
+          if (whError) throw whError;
+
+          // Seed Customers
+          const { error: custError } = await supabase.from('customers').upsert(INITIAL_CUSTOMERS);
+          if (custError) throw custError;
+
+          // Seed Roles
+          await seedRoles();
+
+          // Refresh data
+          await checkOnlineStatus();
+          showToast('Database Seeded Successfully!', 'success');
+      } catch (err: any) {
+          console.error("Seeding Error:", err);
+          showToast(`Seeding Failed: ${err.message}`, 'error');
+      } finally {
+          setIsLoading(false);
+      }
+  };
+
   const checkOnlineStatus = async () => {
       setIsLoading(true);
-      // 1. Explicit Mock Mode
       if (APP_CONFIG.useMockData) {
         setIsOffline(true);
         setOfflineReason(null);
@@ -218,7 +311,6 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      // 2. Try Connecting with Diagnostics
       const status = await diagnoseConnection();
       
       if (status.success) {
@@ -226,7 +318,6 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setOfflineReason(null);
         
         try {
-            // Fetch Real Data from Supabase
             const { data: prodData } = await supabase.from('products').select('*');
             if (prodData) {
                setProducts(prodData);
@@ -251,7 +342,6 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
                localStorage.setItem('lumina_warehouses', JSON.stringify(whData));
             }
 
-            // Fetch Roles - Auto Seed if Empty
             const { data: roleData } = await supabase.from('roles').select('*');
             if (roleData && roleData.length > 0) {
                 setRoles(roleData);
@@ -280,7 +370,6 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
       } else {
-        // 3. Fallback to Offline with specific error
         console.warn(`Connection failed: ${status.message} (${status.code})`);
         setIsOffline(true);
         
@@ -302,16 +391,12 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     if (isOffline) return;
 
-    // Subscribe to multiple channels for live updates
     const channel = supabase.channel('realtime_global')
-      
-      // 1. ORDERS
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
          if (payload.eventType === 'INSERT') {
             const newOrder = payload.new as Order;
             setOrders(prev => [newOrder, ...prev]);
             showToast(`New Order Received: ${newOrder.id}`, 'info');
-            // Notification logic
             setNotifications(prev => [{
                id: `notif-${Date.now()}`,
                title: 'New Order',
@@ -329,8 +414,6 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setOrders(prev => prev.filter(o => o.id !== payload.old.id));
          }
       })
-
-      // 2. PRODUCTS (Inventory)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, (payload) => {
          if (payload.eventType === 'INSERT') {
             setProducts(prev => [payload.new as Product, ...prev]);
@@ -343,8 +426,6 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setProducts(prev => prev.filter(p => p.id !== payload.old.id));
          }
       })
-
-      // 3. RETURNS
       .on('postgres_changes', { event: '*', schema: 'public', table: 'returns' }, (payload) => {
          if (payload.eventType === 'INSERT') {
             const newReturn = payload.new as ReturnRequest;
@@ -363,20 +444,12 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setReturns(prev => prev.map(r => r.id === updated.id ? updated : r));
          }
       })
-
-      .subscribe((status) => {
-         if (status === 'SUBSCRIBED') console.log("Realtime Subscriptions Active");
-      });
+      .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
   }, [isOffline]);
-
-  // --- Initialization ---
-  useEffect(() => {
-    checkOnlineStatus();
-  }, []);
 
   // --- Persistence & Sync ---
   useEffect(() => { localStorage.setItem('lumina_cart', JSON.stringify(cart)); }, [cart]);
@@ -384,39 +457,61 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => { localStorage.setItem('lumina_compare', JSON.stringify(compareList)); }, [compareList]);
   useEffect(() => { localStorage.setItem('lumina_recent', JSON.stringify(recentlyViewed)); }, [recentlyViewed]);
   
-  useEffect(() => { localStorage.setItem('lumina_products', JSON.stringify(products)); }, [products]);
-  useEffect(() => { localStorage.setItem('lumina_orders', JSON.stringify(orders)); }, [orders]);
-  useEffect(() => { localStorage.setItem('lumina_roles', JSON.stringify(roles)); }, [roles]);
-  useEffect(() => { localStorage.setItem('lumina_warehouses', JSON.stringify(warehouses)); }, [warehouses]);
-  useEffect(() => { localStorage.setItem('lumina_settings', JSON.stringify(appSettings)); }, [appSettings]);
-  useEffect(() => { localStorage.setItem('lumina_customers', JSON.stringify(customers)); }, [customers]);
-  useEffect(() => { localStorage.setItem('lumina_returns', JSON.stringify(returns)); }, [returns]);
-
-  useEffect(() => { 
-    if(user) localStorage.setItem('lumina_user', JSON.stringify(user));
-    else localStorage.removeItem('lumina_user');
-  }, [user]);
+  useEffect(() => { checkOnlineStatus(); }, []);
 
   // --- Actions ---
 
-  const sanitizeProduct = (p: Product) => {
-      const clean: any = { ...p };
-      delete clean.selectedColor;
-      delete clean.selectedStorage;
-      delete clean.quantity;
-      clean.originalPrice = clean.originalPrice || null;
-      clean.costPrice = clean.costPrice || null;
-      clean.monthlyPrice = clean.monthlyPrice || null;
-      clean.imageSeed = clean.imageSeed || null;
-      clean.reviews = clean.reviews || [];
-      clean.variants = clean.variants || [];
-      clean.specs = clean.specs || {};
-      clean.seo = clean.seo || {};
-      return clean;
+  const uploadImage = async (file: File): Promise<string | null> => {
+      if (isOffline) {
+          showToast("Cannot upload images in Offline Mode", "error");
+          return null;
+      }
+      try {
+          const fileName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.]/g, '')}`;
+          const { data, error } = await supabase.storage
+              .from('product-images')
+              .upload(fileName, file);
+          
+          if (error) throw error;
+          
+          const { data: { publicUrl } } = supabase.storage
+              .from('product-images')
+              .getPublicUrl(fileName);
+              
+          return publicUrl;
+      } catch (err: any) {
+          console.error("Upload Error:", err);
+          showToast(`Upload failed: ${err.message}`, "error");
+          return null;
+      }
+  };
+
+  const bulkUpsertProducts = async (productsToImport: Product[]) => {
+      if (productsToImport.length === 0) return;
+      
+      const sanitized = productsToImport.map(sanitizeProduct);
+      
+      // Update Local State Optimistically
+      setProducts(prev => {
+          const newMap = new Map(prev.map(p => [p.id, p]));
+          productsToImport.forEach(p => newMap.set(p.id, p));
+          return Array.from(newMap.values());
+      });
+
+      if (!isOffline) {
+          const { error } = await supabase.from('products').upsert(sanitized);
+          if (error) {
+              console.error("Bulk Import Error:", JSON.stringify(error, null, 2));
+              showToast(`Import failed: ${error.message}`, 'error');
+          } else {
+              showToast(`Successfully imported ${productsToImport.length} products!`, 'success');
+          }
+      } else {
+          showToast(`Imported ${productsToImport.length} products locally.`, 'info');
+      }
   };
 
   const addProduct = async (product: Product) => {
-     // Optimistic update
      setProducts(prev => [product, ...prev]);
      if (!isOffline) {
         const cleanProduct = sanitizeProduct(product);
@@ -430,7 +525,6 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateProduct = async (product: Product) => {
-     // Optimistic
      setProducts(prev => prev.map(p => p.id === product.id ? product : p));
      if (!isOffline) {
         const cleanProduct = sanitizeProduct(product);
@@ -462,10 +556,8 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       fraudScore: 5
     };
     
-    // Optimistic UI update for current user
     setOrders(prev => [newOrder, ...prev]);
     
-    // Reduce Stock
     setProducts(prev => prev.map(p => {
       const orderedItem = orderData.items.find(i => i.id === p.id);
       if(orderedItem) { 
@@ -487,7 +579,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return newOrder;
   };
 
-  // Standard Context Actions
+  // Standard Actions
   const addToCart = (product: Product & { selectedColor?: string; selectedStorage?: string }) => {
     setCart(prev => {
       const cartItemId = `${product.id}-${product.selectedColor || ''}-${product.selectedStorage || ''}`;
@@ -556,36 +648,67 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setRecentlyViewed(prev => [product, ...prev.filter(p => p.id !== product.id)].slice(0, 10));
   };
 
-  // Auth & User
-  const login = (email: string) => {
-    let role: RoleType = 'User';
-    if (email.includes('admin')) role = 'Shop Admin';
-    if (email.includes('super')) role = 'Super Admin';
-    
-    setUser({
-      id: `u-${Date.now()}`,
-      name: email.split('@')[0],
-      email,
-      avatar: `https://ui-avatars.com/api/?name=${email}`,
-      role,
-      addresses: []
-    });
-    showToast(`Welcome back!`, 'success');
+  // Auth & User - REAL IMPLEMENTATION
+  const login = async (email: string, password?: string) => {
+    if (isOffline) {
+        // Fallback Mock Login
+        let role: RoleType = 'User';
+        if (email.includes('admin')) role = 'Shop Admin';
+        if (email.includes('super')) role = 'Super Admin';
+        setUser({ id: `u-${Date.now()}`, name: email.split('@')[0], email, avatar: `https://ui-avatars.com/api/?name=${email}`, role, addresses: [] });
+        showToast(`Welcome back (Offline Mode)!`, 'success');
+        return;
+    }
+
+    try {
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password: password || 'password' }); // Assuming simplified login for now if password not provided
+        if (error) throw error;
+        // User state will be updated by onAuthStateChange listener
+        showToast('Logged in successfully', 'success');
+    } catch (error: any) {
+        console.error("Login Error:", error);
+        showToast(error.message, 'error');
+    }
   };
 
-  const logout = () => { setUser(null); showToast('Logged out', 'info'); };
-  const register = (name: string, email: string) => {
-     setUser({ id: `u-${Date.now()}`, name, email, avatar: `https://ui-avatars.com/api/?name=${name}`, role: 'User', addresses: [] });
-     showToast('Account created', 'success');
+  const logout = async () => { 
+      if (!isOffline) await supabase.auth.signOut();
+      setUser(null); 
+      showToast('Logged out', 'info'); 
+  };
+
+  const register = async (name: string, email: string, password?: string) => {
+     if (isOffline) {
+         setUser({ id: `u-${Date.now()}`, name, email, avatar: `https://ui-avatars.com/api/?name=${name}`, role: 'User', addresses: [] });
+         showToast('Account created (Offline Mode)', 'success');
+         return;
+     }
+
+     try {
+         const { data, error } = await supabase.auth.signUp({
+             email,
+             password: password || 'password',
+             options: {
+                 data: { name, role: 'User' } // Store minimal profile in metadata
+             }
+         });
+         if (error) throw error;
+         showToast('Account created! Please sign in.', 'success');
+     } catch (error: any) {
+         console.error("Registration Error:", error);
+         showToast(error.message, 'error');
+     }
   };
 
   const checkPermission = (permissionKey: string): boolean => {
     if (!user) return false;
     if (user.role === 'Super Admin') return true;
+    // Failsafe for admin emails if RBAC fails or is empty
     if (roles.length === 0 && (user.email.includes('admin') || user.email.includes('super'))) return true; 
 
     const roleDef = roles.find(r => r.name === user.role);
     if (!roleDef) {
+       // Emergency fallback
        if (user.email.includes('admin') || user.email.includes('super')) return true;
        return false;
     }
@@ -593,31 +716,15 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return roleDef.permissions.includes(permissionKey);
   };
 
-  // Other Actions
+  // ... (Other standard actions: reviews, address, etc. kept same) ...
   const addReview = (productId: string, review: Omit<Review, 'id' | 'date'>) => {
-     setProducts(prev => prev.map(p => {
-        if (p.id === productId) {
-           return { ...p, reviewsCount: (p.reviewsCount || 0) + 1 };
-        }
-        return p;
-     }));
+     setProducts(prev => prev.map(p => { if (p.id === productId) { return { ...p, reviewsCount: (p.reviewsCount || 0) + 1 }; } return p; }));
      showToast('Review submitted', 'success');
   };
 
-  const addAddress = (address: Omit<Address, 'id'>) => {
-     if (user) setUser({ ...user, addresses: [...user.addresses, { ...address, id: `addr-${Date.now()}` }] });
-  };
-  
-  const removeAddress = (id: string) => {
-     if (user) setUser({ ...user, addresses: user.addresses.filter(a => a.id !== id) });
-  };
-
-  const updateUserProfile = (data: Partial<User>) => {
-     if (user) {
-        setUser({ ...user, ...data });
-        showToast('Profile updated', 'success');
-     }
-  };
+  const addAddress = (address: Omit<Address, 'id'>) => { if (user) setUser({ ...user, addresses: [...user.addresses, { ...address, id: `addr-${Date.now()}` }] }); };
+  const removeAddress = (id: string) => { if (user) setUser({ ...user, addresses: user.addresses.filter(a => a.id !== id) }); };
+  const updateUserProfile = (data: Partial<User>) => { if (user) { setUser({ ...user, ...data }); showToast('Profile updated', 'success'); } };
 
   // Admin Actions
   const updateOrderStatus = async (orderId: string, status: Order['status']) => {
@@ -650,13 +757,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const addRole = async (role: RoleDefinition) => {
      setRoles(prev => [...prev, role]);
      if (!isOffline) {
-       const { error } = await supabase.from('roles').insert({
-         id: role.id,
-         name: role.name,
-         permissions: role.permissions,
-         "isSystem": role.isSystem,
-         description: role.description
-       });
+       const { error } = await supabase.from('roles').insert({ id: role.id, name: role.name, permissions: role.permissions, "isSystem": role.isSystem, description: role.description });
        if(error) console.error("Add Role Error:", error.message);
      }
      showToast('Role created', 'success');
@@ -664,11 +765,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateRole = async (role: RoleDefinition) => {
      setRoles(prev => prev.map(r => r.id === role.id ? role : r));
-     if (!isOffline) await supabase.from('roles').update({
-       name: role.name,
-       permissions: role.permissions,
-       description: role.description
-     }).eq('id', role.id);
+     if (!isOffline) await supabase.from('roles').update({ name: role.name, permissions: role.permissions, description: role.description }).eq('id', role.id);
      showToast('Role updated', 'success');
   };
 
@@ -703,18 +800,9 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (w.id === toId) return { ...w, utilization: Math.min(100, w.utilization + 1) };
           return w;
       }));
-      
       const prod = products.find(p => p.id === productId);
-      const notif: Notification = {
-          id: `notif-${Date.now()}`,
-          title: 'Stock Transfer',
-          message: `Moved ${quantity}x ${prod?.name || 'Item'} from ${warehouses.find(w => w.id === fromId)?.name} to ${warehouses.find(w => w.id === toId)?.name}`,
-          type: 'info',
-          timestamp: Date.now(),
-          read: false
-      };
+      const notif: Notification = { id: `notif-${Date.now()}`, title: 'Stock Transfer', message: `Moved ${quantity}x ${prod?.name || 'Item'} from ${warehouses.find(w => w.id === fromId)?.name} to ${warehouses.find(w => w.id === toId)?.name}`, type: 'info', timestamp: Date.now(), read: false };
       setNotifications(prev => [notif, ...prev]);
-      
       showToast('Stock transfer recorded successfully', 'success');
   };
 
@@ -728,7 +816,6 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const updateReturnStatus = (id: string, status: ReturnRequest['status']) => {
      setReturns(prev => prev.map(r => r.id === id ? { ...r, status } : r));
      if (!isOffline) supabase.from('returns').update({ status }).eq('id', id);
-     
      if (status === 'Approved') {
          const ret = returns.find(r => r.id === id);
          if (ret && ret.orderId) {
@@ -736,7 +823,6 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
              showToast('Order status auto-updated to Returned', 'info');
          }
      }
-     
      showToast('Return status updated', 'success');
   };
 
@@ -750,7 +836,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       products, cart, wishlist, compareList, recentlyViewed, isCartOpen, searchQuery, user, orders, customers, warehouses, appSettings, roles, availablePermissions: AVAILABLE_PERMISSIONS, returns, notifications, isOffline, offlineReason, isLoading,
       setSearchQuery, addToCart, removeFromCart, updateQuantity, toggleCart, clearCart, toggleWishlist, isInWishlist, addToCompare, removeFromCompare, isInCompare, addToRecentlyViewed,
       totalAmount, toast, showToast, login, logout, register, addReview, addAddress, removeAddress, createOrder, updateUserProfile,
-      updateOrderStatus, deleteOrder, deleteProduct, updateProduct, addProduct, updateSettings, updateCustomer, addRole, updateRole, deleteRole, checkPermission, seedRoles,
+      updateOrderStatus, deleteOrder, deleteProduct, updateProduct, addProduct, bulkUpsertProducts, uploadImage, updateSettings, updateCustomer, addRole, updateRole, deleteRole, checkPermission, seedRoles, seedDatabase,
       addWarehouse, updateWarehouse, removeWarehouse, transferStock, addReturnRequest, updateReturnStatus, markNotificationRead, clearNotifications, retryConnection: checkOnlineStatus
     }}>
       {children}

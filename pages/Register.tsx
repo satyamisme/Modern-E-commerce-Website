@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useShop } from '../context/ShopContext';
@@ -12,14 +13,12 @@ export const Register: React.FC = () => {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setTimeout(() => {
-       register(name, email);
-       setIsLoading(false);
-       navigate('/account');
-    }, 1500);
+    await register(name, email, password);
+    setIsLoading(false);
+    navigate('/account');
   };
 
   return (

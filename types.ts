@@ -1,5 +1,4 @@
 
-
 export interface Review {
   id: string;
   userId: string;
@@ -82,15 +81,8 @@ export interface CartItem extends Product {
 
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'model';
+  role: 'user' | 'model' | 'system';
   text: string;
-  isLoading?: boolean;
-}
-
-export enum SortOption {
-  Recommended = 'Recommended',
-  PriceLowHigh = 'Price: Low to High',
-  PriceHighLow = 'Price: High to Low',
 }
 
 export interface ToastMessage {
@@ -99,102 +91,33 @@ export interface ToastMessage {
   type: 'success' | 'error' | 'info';
 }
 
-export type RoleType = 'Super Admin' | 'Shop Admin' | 'Sales' | 'Warehouse Staff' | 'User' | string;
-
-export interface Permission {
-  id: string;
-  label: string;
-  key: string;
-  description?: string;
-}
-
-export interface RoleDefinition {
-  id: string;
-  name: string;
-  permissions: string[]; // Array of permission keys
-  isSystem?: boolean; // Cannot be deleted if true
-  description?: string;
-}
+export type RoleType = 'User' | 'Shop Admin' | 'Super Admin' | 'Sales' | 'Warehouse Staff';
 
 export interface User {
   id: string;
   name: string;
   email: string;
-  phone?: string;
-  avatar?: string;
-  role: RoleType;
-  shopId?: string; // If assigned to a specific shop
-  addresses: Address[];
-}
-
-export interface CustomerProfile {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  joinDate: string;
-  totalSpent: number;
-  ordersCount: number;
-  segment: 'VIP' | 'Regular' | 'New' | 'At-Risk';
-  lastOrderDate: string;
-  notes?: string;
+  role: string;
   avatar: string;
-}
-
-export interface Warehouse {
-  id: string;
-  name: string;
-  location: {
-    lat?: number;
-    lng?: number;
-    address: string;
-  };
-  capacity: number;
-  utilization: number;
-  type: 'Main Warehouse' | 'Retail Shop' | 'Online Fulfillment';
-  managerId?: string;
   phone?: string;
-  openingHours?: string;
+  addresses: Address[];
 }
 
 export interface Order {
   id: string;
   date: string;
   total: number;
-  status: 'New' | 'Fraud Scan' | 'Processing' | 'Picking' | 'QC' | 'Shipping' | 'Delivered' | 'Cancelled' | 'Returned';
-  paymentStatus: 'Pending' | 'Paid' | 'Failed';
-  paymentMethod: 'KNET' | 'Credit Card' | 'WhatsApp Checkout';
+  status: 'New' | 'Fraud Scan' | 'Processing' | 'Picking' | 'QC' | 'Shipping' | 'Delivered' | 'Returned' | 'Cancelled';
+  paymentStatus: 'Paid' | 'Pending' | 'Failed';
+  paymentMethod: string;
   items: CartItem[];
-  fraudScore?: number;
-  shopId?: string; // Fulfilled by
   customer: {
     name: string;
     email: string;
     phone: string;
     address: string;
-    segment?: 'VIP' | 'Regular' | 'New' | 'At-Risk';
   };
-}
-
-export interface ReturnRequest {
-  id: string;
-  orderId: string;
-  customerEmail: string;
-  reason: 'Defective' | 'Wrong Item' | 'Changed Mind' | 'Other';
-  condition: 'Opened' | 'Sealed';
-  details: string;
-  status: 'Pending' | 'Approved' | 'Rejected' | 'Completed';
-  date: string;
-}
-
-export interface Notification {
-  id: string;
-  title: string;
-  message: string;
-  type: 'info' | 'warning' | 'success' | 'error';
-  timestamp: number;
-  read: boolean;
-  link?: string;
+  fraudScore?: number;
 }
 
 export interface AppSettings {
@@ -208,11 +131,78 @@ export interface AppSettings {
   enableWhatsAppPayment: boolean;
   deliveryFee: number;
   freeShippingThreshold: number;
-  aiProvider?: 'google' | 'openai' | 'grok' | 'perplexity' | 'deepseek';
+  aiProvider: 'google' | 'openai' | 'grok' | 'perplexity' | 'deepseek';
   socialLinks?: {
     instagram?: string;
     tiktok?: string;
     facebook?: string;
     twitter?: string;
   };
+}
+
+export interface CustomerProfile {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  joinDate: string;
+  totalSpent: number;
+  ordersCount: number;
+  segment: 'VIP' | 'Regular' | 'New' | 'At-Risk';
+  lastOrderDate: string;
+  avatar: string;
+  notes?: string;
+}
+
+export interface Warehouse {
+  id: string;
+  name: string;
+  location: { address: string };
+  capacity: number;
+  utilization: number;
+  type: 'Main Warehouse' | 'Retail Shop' | 'Online Fulfillment';
+  managerId?: string;
+  phone?: string;
+  openingHours?: string;
+}
+
+export interface Permission {
+  id: string;
+  label: string;
+  key: string;
+  description: string;
+}
+
+export interface RoleDefinition {
+  id: string;
+  name: string;
+  isSystem: boolean;
+  description: string;
+  permissions: string[];
+}
+
+export interface ReturnRequest {
+  id: string;
+  orderId: string;
+  customerEmail: string;
+  reason: 'Defective' | 'Wrong Item' | 'Changed Mind' | 'Other';
+  condition: 'Sealed' | 'Opened';
+  details: string;
+  status: 'Pending' | 'Approved' | 'Rejected' | 'Completed';
+  date: string;
+}
+
+export interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  type: 'success' | 'warning' | 'info' | 'error';
+  timestamp: number;
+  read: boolean;
+}
+
+export enum SortOption {
+  Recommended = 'Recommended',
+  PriceLowHigh = 'Price: Low to High',
+  PriceHighLow = 'Price: High to Low',
 }

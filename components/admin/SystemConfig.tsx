@@ -3,15 +3,17 @@
 
 
 
+
+
 import React, { useState, useEffect } from 'react';
 import { useShop } from '../../context/ShopContext';
-import { Save, Globe, DollarSign, Truck, Cpu, CreditCard, Share2, Database, AlertTriangle, CheckCircle, RefreshCw, RotateCcw, Copy, Code, Shield, MessageCircle } from 'lucide-react';
+import { Save, Globe, DollarSign, Truck, Cpu, CreditCard, Share2, Database, AlertTriangle, CheckCircle, RefreshCw, RotateCcw, Copy, Code, Shield, MessageCircle, CloudDownload } from 'lucide-react';
 import { AppSettings } from '../../types';
 import { updateDatabaseConfig, getDatabaseConfig, resetDatabaseConfig, checkConnection } from '../../lib/supabaseClient';
 import { MASTER_SCHEMA_SQL } from '../../lib/schemaDefinition';
 
 export const SystemConfig: React.FC = () => {
-  const { appSettings, updateSettings, showToast, isOffline, offlineReason, seedRoles } = useShop();
+  const { appSettings, updateSettings, showToast, isOffline, offlineReason, seedRoles, seedDatabase } = useShop();
   const [formData, setFormData] = useState<AppSettings>(appSettings);
   const [activeSection, setActiveSection] = useState<'general' | 'finance' | 'ai' | 'payments' | 'social' | 'database'>('general');
   const [isLoading, setIsLoading] = useState(false);
@@ -79,6 +81,12 @@ export const SystemConfig: React.FC = () => {
           await seedRoles();
           showToast("Roles repaired. Refreshing...", "success");
           setTimeout(() => window.location.reload(), 1000);
+      }
+  };
+
+  const handleSeedData = async () => {
+      if (confirm("This will populate your database with 50+ demo products, customers, and warehouses. This is great for new setups but might duplicate data if run twice. Continue?")) {
+          await seedDatabase();
       }
   };
 
@@ -180,18 +188,36 @@ export const SystemConfig: React.FC = () => {
                                 {dbConfig.isCustom && <span className="text-xs bg-white/50 px-2 py-0.5 rounded font-bold border border-black/5">Custom Override Active</span>}
                             </div>
 
-                            {/* Role Repair Tool */}
-                            <div className="bg-yellow-50 border border-yellow-100 p-4 rounded-xl flex justify-between items-center">
-                                <div>
-                                    <h4 className="font-bold text-yellow-900 text-sm flex items-center gap-2"><Shield size={16}/> Emergency Role Repair</h4>
-                                    <p className="text-xs text-yellow-700">If your dashboard is grayed out/blank, click this to restore default roles.</p>
+                            {/* Tools Section */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Role Repair Tool */}
+                                <div className="bg-yellow-50 border border-yellow-100 p-4 rounded-xl flex justify-between items-center">
+                                    <div>
+                                        <h4 className="font-bold text-yellow-900 text-sm flex items-center gap-2"><Shield size={16}/> Emergency Role Repair</h4>
+                                        <p className="text-xs text-yellow-700 mt-1">Restore default permissions if dashboard is locked.</p>
+                                    </div>
+                                    <button 
+                                        onClick={handleRepairRoles}
+                                        className="px-3 py-2 bg-yellow-100 text-yellow-800 font-bold rounded-lg hover:bg-yellow-200 transition-colors text-xs border border-yellow-200"
+                                    >
+                                        Repair Roles
+                                    </button>
                                 </div>
-                                <button 
-                                    onClick={handleRepairRoles}
-                                    className="px-4 py-2 bg-yellow-100 text-yellow-800 font-bold rounded-lg hover:bg-yellow-200 transition-colors text-xs border border-yellow-200"
-                                >
-                                    Repair Roles & Permissions
-                                </button>
+
+                                {/* Seed Data Tool */}
+                                <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex justify-between items-center">
+                                    <div>
+                                        <h4 className="font-bold text-blue-900 text-sm flex items-center gap-2"><CloudDownload size={16}/> Seed Demo Data</h4>
+                                        <p className="text-xs text-blue-700 mt-1">Populate empty database with products & inventory.</p>
+                                    </div>
+                                    <button 
+                                        onClick={handleSeedData}
+                                        disabled={isOffline}
+                                        className="px-3 py-2 bg-blue-100 text-blue-800 font-bold rounded-lg hover:bg-blue-200 transition-colors text-xs border border-blue-200 disabled:opacity-50"
+                                    >
+                                        Seed Data
+                                    </button>
+                                </div>
                             </div>
 
                             {/* Schema Setup Wizard */}

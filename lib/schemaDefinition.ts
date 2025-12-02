@@ -5,7 +5,6 @@ export const MASTER_SCHEMA_SQL = `
 create extension if not exists "uuid-ossp";
 
 -- 1. PRODUCTS
--- Using quoted identifiers to match TypeScript interfaces (CamelCase)
 create table if not exists public.products (
   id text primary key,
   name text not null,
@@ -42,7 +41,7 @@ create table if not exists public.products (
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- Self-healing: Add columns if they are missing (for existing databases)
+-- Self-healing: Add columns if they are missing
 do $$
 begin
   if not exists (select 1 from information_schema.columns where table_name='products' and column_name='monthlyPrice') then
@@ -181,7 +180,27 @@ create table if not exists public.returns (
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- Insert Default Settings (Only if empty)
+-- 8. STORAGE & BUCKETS
+-- Attempt to create the storage bucket. 
+-- Note: Requires pg_net or similar in some setups, but this insert works for standard Supabase Storage schema.
+insert into storage.buckets (id, name, public)
+values ('product-images', 'product-images', true)
+on conflict (id) do nothing;
+
+-- Storage Policies
+create policy "Public Access"
+  on storage.objects for select
+  using ( bucket_id = 'product-images' );
+
+create policy "Auth Upload"
+  on storage.objects for insert
+  with check ( bucket_id = 'product-images' );
+
+create policy "Auth Update"
+  on storage.objects for update
+  using ( bucket_id = 'product-images' );
+
+-- Insert Default Settings
 insert into public.app_settings ("storeName", currency, "deliveryFee", "freeShippingThreshold", "supportEmail")
 select 'LAKKI PHONES', 'KWD', 5, 50, 'support@lakkiphones.com'
 where not exists (select 1 from public.app_settings);
