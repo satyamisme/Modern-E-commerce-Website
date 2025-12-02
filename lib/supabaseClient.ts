@@ -33,15 +33,19 @@ type ConnectionStatus = {
   success: boolean;
   message?: string;
   code?: string;
+  url?: string;
+  syncError?: string;
 };
 
 // Helper to check connection with detailed diagnostics
 export const diagnoseConnection = async (): Promise<ConnectionStatus> => {
+  const maskedUrl = SUPABASE_URL.replace(/^(https?:\/\/)([^.]+)(.*)$/, '$1*****$3');
+  
   try {
-    if (APP_CONFIG.useMockData) return { success: true, message: "Mock Mode" };
+    if (APP_CONFIG.useMockData) return { success: true, message: "Mock Mode", url: 'Internal Mock DB' };
     
     if (!isSupabaseConfigured()) {
-      return { success: false, message: "Missing API Credentials" };
+      return { success: false, message: "Missing API Credentials", url: 'Not Configured' };
     }
 
     // 1. Check Auth / Reachability (Does not require tables)
@@ -49,23 +53,24 @@ export const diagnoseConnection = async (): Promise<ConnectionStatus> => {
     const { error: authError } = await supabase.auth.getSession();
     if (authError) {
        console.error("Supabase Auth Check Failed:", authError);
-       return { success: false, message: `Auth Failed: ${authError.message}`, code: 'AUTH_FAIL' };
+       return { success: false, message: `Auth Failed: ${authError.message}`, code: 'AUTH_FAIL', url: maskedUrl };
     }
 
     // 2. Check Database Schema (Requires 'app_settings' table)
-    const { data, error } = await supabase.from('app_settings').select('store_name').maybeSingle();
+    // We select '*' to ensure we just check table existence, avoiding column naming mismatch (snake_case vs camelCase)
+    const { data, error } = await supabase.from('app_settings').select('*').maybeSingle();
     
     if (error) {
       // Code 42P01 means "relation does not exist" -> Connected, but tables missing.
       if (error.code === '42P01') {
-         return { success: false, message: "Tables Missing (Run SQL Schema)", code: 'NO_SCHEMA' };
+         return { success: false, message: "Tables Missing (Run SQL Schema)", code: 'NO_SCHEMA', url: maskedUrl };
       }
-      return { success: false, message: `DB Error: ${error.message}`, code: error.code };
+      return { success: false, message: `DB Error: ${error.message}`, code: error.code, url: maskedUrl };
     }
     
-    return { success: true, message: "Connected" };
+    return { success: true, message: "Connected", url: maskedUrl };
   } catch (e: any) {
-    return { success: false, message: `Exception: ${e.message}`, code: 'EXCEPTION' };
+    return { success: false, message: `Exception: ${e.message}`, code: 'EXCEPTION', url: maskedUrl };
   }
 };
 

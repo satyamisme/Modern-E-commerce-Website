@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useShop } from '../context/ShopContext';
@@ -28,18 +29,18 @@ export const Login: React.FC = () => {
   };
 
   const handleAdminShortcut = async () => {
-    // Use a standard domain to prevent Supabase validation errors
-    const adminEmail = 'admin.user@example.com';
-    const adminPass = 'lakkiAdmin123!';
+    // Specific credentials requested by user
+    const adminEmail = 'superadmin@lakkiphones.com';
+    const adminPass = 'Aa100200';
     
     setIsLoading(true);
     showToast('Authenticating Super Admin...', 'info');
     
     try {
-        // 1. Try Login
+        // 1. Try Login directly (with trimmed credentials)
         const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ 
-            email: adminEmail, 
-            password: adminPass 
+            email: adminEmail.trim(), 
+            password: adminPass.trim() 
         });
 
         if (!signInError && signInData.session) {
@@ -48,57 +49,66 @@ export const Login: React.FC = () => {
             return;
         }
 
-        // 2. If fail, Try Register
+        // 2. Handle Errors
         if (signInError) {
-           // NETWORK ERROR HANDLING
+           // Network Error -> Force Offline
            if (signInError.message && (signInError.message.includes('Failed to fetch') || signInError.message.includes('network'))) {
                throw new Error('NETWORK_FAIL');
            }
 
-           console.log(`Login failed (${signInError.message}), attempting registration...`);
-           
-           const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-              email: adminEmail,
-              password: adminPass,
-              options: {
-                data: { 
-                  name: 'Super Admin', 
-                  role: 'Super Admin' 
-                }
-              }
-           });
-           
-           if (signUpError) {
-               // If it says "User already registered", it means password was wrong in step 1
-               if (signUpError.message.includes('already registered')) {
-                   showToast('Admin user exists but password was wrong. Resetting local session...', 'error');
-                   // Attempt to force local login anyway for recovery
+           // If Login Failed (Invalid credentials), Check if we need to Register (Auto-Setup)
+           // Or if the error implies the user doesn't exist
+           if (signInError.message.includes('Invalid login credentials') || signInError.message.includes('not found')) {
+               console.log("User not found or wrong password. Attempting creation...");
+               
+               const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+                  email: adminEmail.trim(),
+                  password: adminPass.trim(),
+                  options: {
+                    data: { 
+                      name: 'Super Admin', 
+                      role: 'Super Admin' 
+                    }
+                  }
+               });
+               
+               if (signUpError) {
+                   // If registration fails (e.g., "invalid email", "already registered", "password weak")
+                   // We MUST force offline mode so the user isn't locked out of their own demo.
+                   console.warn("Registration failed:", signUpError.message);
+                   showToast(`Online setup issue: ${signUpError.message}. Using Offline Mode.`, 'info');
                    throw new Error('FORCE_OFFLINE');
-               } else {
-                   // Generic error
-                   showToast(`Error: ${signUpError.message}`, 'error');
                }
-               return;
+               
+               if (signUpData.session) {
+                   showToast('Admin account created! Signing in...', 'success');
+                   navigate('/admin');
+                   return;
+               } else {
+                   // Account created but maybe email confirmation needed
+                   showToast('Account created. Checking session...', 'info');
+                   // If no session, force offline so they can work
+                   if (!signUpData.session) throw new Error('FORCE_OFFLINE');
+                   return;
+               }
            }
-           
-           // 3. Check if session was created
-           if (signUpData.session) {
-               showToast('Admin account created! Signing in...', 'success');
-               navigate('/admin');
-           } else {
-               showToast('Account created. Please check email or disable Confirm Email in Supabase.', 'info');
+
+           // Other Errors (like "Email address invalid" on login attempt)
+           console.error("Login Failed:", signInError);
+           // If it's an invalid email format on login, force offline
+           if (signInError.message.includes('invalid')) {
+               throw new Error('FORCE_OFFLINE');
            }
+           showToast(`Login Failed: ${signInError.message}`, 'error');
         }
     } catch (err: any) {
-        // EMERGENCY FALLBACK
-        if (err.message === 'NETWORK_FAIL' || err.message === 'FORCE_OFFLINE' || err.name === 'TypeError') {
-            console.warn("Network/Auth Error - Forcing Offline Admin Session");
-            showToast('Network issue detected. Logging in as Offline Admin to allow configuration.', 'error');
+        // EMERGENCY FALLBACK for Network Issues, Password Mismatch, or Validation Errors
+        if (err.message === 'NETWORK_FAIL' || err.message === 'FORCE_OFFLINE' || err.message.includes('invalid')) {
             
             // Manually inject session for ShopContext to pick up
             const offlineUser = {
                 id: 'offline-admin',
-                name: 'Offline Super Admin',
+                name: 'Super Admin (Offline)',
                 email: adminEmail,
                 role: 'Super Admin',
                 avatar: `https://ui-avatars.com/api/?name=Super+Admin`,
@@ -106,15 +116,15 @@ export const Login: React.FC = () => {
             };
             localStorage.setItem('lumina_user', JSON.stringify(offlineUser));
             
-            // Force reload to pick up local storage if Context doesn't update immediately
+            // Force reload to pick up local storage
             setTimeout(() => {
                 window.location.href = '#/admin';
                 window.location.reload();
-            }, 1000);
+            }, 500);
             return;
         }
 
-        console.error("Admin Login Error:", err);
+        console.error("Admin Login Exception:", err);
         showToast(err.message || "Authentication failed", 'error');
     } finally {
         setIsLoading(false);
@@ -198,7 +208,7 @@ export const Login: React.FC = () => {
                    {isLoading ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : <ShieldCheck size={18} />}
                    Quick Super Admin Login
                 </button>
-                <p className="text-center text-xs text-gray-400 mt-2">Auto-creates account. Email: admin.user@example.com</p>
+                <p className="text-center text-xs text-gray-400 mt-2">Auto-login with Failover Protection</p>
              </div>
 
              <div className="mt-8 text-center">

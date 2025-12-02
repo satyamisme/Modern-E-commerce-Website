@@ -1,10 +1,10 @@
 
-
 export const MASTER_SCHEMA_SQL = `
 -- Enable UUID extension
 create extension if not exists "uuid-ossp";
 
 -- 1. PRODUCTS
+-- We use quoted identifiers (e.g. "originalPrice") to preserve camelCase matching TypeScript
 create table if not exists public.products (
   id text primary key,
   name text not null,
@@ -32,6 +32,8 @@ create table if not exists public.products (
   "reorderPoint" integer default 5,
   supplier text,
   sku text,
+  barcode text,
+  "imeiTracking" boolean default false,
   rating numeric default 0,
   "reviewsCount" integer default 0,
   reviews jsonb default '[]'::jsonb,
@@ -82,6 +84,12 @@ begin
   end if;
   if not exists (select 1 from information_schema.columns where table_name='products' and column_name='reviewsCount') then
     alter table public.products add column "reviewsCount" integer default 0;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name='products' and column_name='barcode') then
+    alter table public.products add column "barcode" text;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name='products' and column_name='imeiTracking') then
+    alter table public.products add column "imeiTracking" boolean default false;
   end if;
 end $$;
 
@@ -180,25 +188,37 @@ create table if not exists public.returns (
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- 8. STORAGE & BUCKETS
+-- 8. TRANSFER LOGS (Audit Trail)
+create table if not exists public.transfer_logs (
+  id text primary key,
+  "productId" text,
+  "fromLocationId" text,
+  "toLocationId" text,
+  quantity integer,
+  "userId" text,
+  timestamp timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- 9. STORAGE & BUCKETS
 -- Attempt to create the storage bucket. 
 -- Note: Requires pg_net or similar in some setups, but this insert works for standard Supabase Storage schema.
 insert into storage.buckets (id, name, public)
 values ('product-images', 'product-images', true)
 on conflict (id) do nothing;
 
--- Storage Policies
-create policy "Public Access"
-  on storage.objects for select
-  using ( bucket_id = 'product-images' );
-
-create policy "Auth Upload"
-  on storage.objects for insert
-  with check ( bucket_id = 'product-images' );
-
-create policy "Auth Update"
-  on storage.objects for update
-  using ( bucket_id = 'product-images' );
+-- Storage Policies (Idempotent)
+do $$
+begin
+  if not exists (select 1 from pg_policies where policyname = 'Public Access') then
+    create policy "Public Access" on storage.objects for select using ( bucket_id = 'product-images' );
+  end if;
+  if not exists (select 1 from pg_policies where policyname = 'Auth Upload') then
+    create policy "Auth Upload" on storage.objects for insert with check ( bucket_id = 'product-images' );
+  end if;
+  if not exists (select 1 from pg_policies where policyname = 'Auth Update') then
+    create policy "Auth Update" on storage.objects for update using ( bucket_id = 'product-images' );
+  end if;
+end $$;
 
 -- Insert Default Settings
 insert into public.app_settings ("storeName", currency, "deliveryFee", "freeShippingThreshold", "supportEmail")
@@ -214,32 +234,54 @@ values
 ('role-warehouse', 'Warehouse Staff', ARRAY['manage_inventory'], true, 'Inventory and stock transfer')
 on conflict (id) do nothing;
 
--- Enable RLS
+-- Enable RLS (Safe to run multiple times)
 alter table products enable row level security;
+alter table orders enable row level security;
+alter table app_settings enable row level security;
+alter table roles enable row level security;
+alter table customers enable row level security;
+alter table warehouses enable row level security;
+alter table returns enable row level security;
+alter table transfer_logs enable row level security;
+
+-- Policies (Drop and Recreate to ensure correctness)
+drop policy if exists "Public Read" on products;
 create policy "Public Read" on products for select using (true);
+drop policy if exists "Admin Write" on products;
 create policy "Admin Write" on products for all using (true);
 
-alter table orders enable row level security;
+drop policy if exists "Public Read Orders" on orders;
 create policy "Public Read Orders" on orders for select using (true);
+drop policy if exists "Admin Write Orders" on orders;
 create policy "Admin Write Orders" on orders for all using (true);
 
-alter table app_settings enable row level security;
+drop policy if exists "Public Read Settings" on app_settings;
 create policy "Public Read Settings" on app_settings for select using (true);
+drop policy if exists "Admin Write Settings" on app_settings;
 create policy "Admin Write Settings" on app_settings for all using (true);
 
-alter table roles enable row level security;
+drop policy if exists "Public Read Roles" on roles;
 create policy "Public Read Roles" on roles for select using (true);
+drop policy if exists "Admin Write Roles" on roles;
 create policy "Admin Write Roles" on roles for all using (true);
 
-alter table customers enable row level security;
+drop policy if exists "Public Read Customers" on customers;
 create policy "Public Read Customers" on customers for select using (true);
+drop policy if exists "Admin Write Customers" on customers;
 create policy "Admin Write Customers" on customers for all using (true);
 
-alter table warehouses enable row level security;
+drop policy if exists "Public Read Warehouses" on warehouses;
 create policy "Public Read Warehouses" on warehouses for select using (true);
+drop policy if exists "Admin Write Warehouses" on warehouses;
 create policy "Admin Write Warehouses" on warehouses for all using (true);
 
-alter table returns enable row level security;
+drop policy if exists "Public Read Returns" on returns;
 create policy "Public Read Returns" on returns for select using (true);
+drop policy if exists "Admin Write Returns" on returns;
 create policy "Admin Write Returns" on returns for all using (true);
+
+drop policy if exists "Public Read TransferLogs" on transfer_logs;
+create policy "Public Read TransferLogs" on transfer_logs for select using (true);
+drop policy if exists "Admin Write TransferLogs" on transfer_logs;
+create policy "Admin Write TransferLogs" on transfer_logs for all using (true);
 `;

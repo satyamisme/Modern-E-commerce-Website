@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Chat, GenerateContentResponse } from "@google/genai";
 import { Product } from "../types";
 import { PRODUCTS } from "../data/products";
@@ -295,6 +296,7 @@ export const fetchPhoneSpecs = async (modelName: string): Promise<Partial<Produc
         Structure:
         {
             "brand": "String",
+            "category": "Smartphones" | "Tablets" | "Wearables" | "Audio" | "Accessories",
             "price": Number (KWD estimate),
             "description": "Marketing text (150 chars)",
             "colors": ["Color1", "Color2"],
@@ -323,11 +325,13 @@ export const fetchPhoneSpecs = async (modelName: string): Promise<Partial<Produc
             text = response.text || "{}";
         } else {
              text = await sendMessageToGemini(prompt);
-             text = text.replace(/```json/g, '').replace(/```/g, '').trim();
         }
         
+        // Robust cleaning for JSON
+        const cleaned = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        
         // Validation check
-        const parsed = JSON.parse(text);
+        const parsed = JSON.parse(cleaned);
         if (!parsed.brand && !parsed.specs) return null;
         return parsed;
     } catch (error) {

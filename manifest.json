@@ -1,0 +1,16 @@
+
+{
+  "short_name": "LakkiPhones",
+  "name": "LAKKI PHONES | Premium Mobile Store",
+  "icons": [
+    {
+      "src": "https://cdn.lucide.dev/smartphone.svg",
+      "type": "image/svg+xml",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#1e3a8a",
+  "background_color": "#ffffff"
+}

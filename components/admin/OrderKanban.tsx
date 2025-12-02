@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { useShop } from '../../context/ShopContext';
-import { MoreHorizontal, Calendar, AlertTriangle, CheckCircle, Truck, Package, CreditCard, ShieldAlert } from 'lucide-react';
+import { MoreHorizontal, Calendar, AlertTriangle, CheckCircle, Truck, Package, CreditCard, ShieldAlert, Printer } from 'lucide-react';
 import { Order } from '../../types';
 
 const COLUMNS = [
@@ -41,6 +41,107 @@ export const OrderKanban: React.FC = () => {
        updateOrderStatus(orderId, status);
     }
     setDraggedOrder(null);
+  };
+
+  const printInvoice = (order: Order) => {
+      const popup = window.open('', '_blank', 'width=800,height=600');
+      if (!popup) { alert('Popup blocked'); return; }
+      
+      const itemsHtml = order.items.map(item => `
+        <tr style="border-bottom: 1px solid #eee;">
+            <td style="padding: 10px;">${item.name} <br/><small>${item.selectedColor || ''} ${item.selectedStorage || ''}</small></td>
+            <td style="padding: 10px; text-align: center;">${item.quantity}</td>
+            <td style="padding: 10px; text-align: right;">${item.price} KWD</td>
+            <td style="padding: 10px; text-align: right;">${item.price * item.quantity} KWD</td>
+        </tr>
+      `).join('');
+
+      popup.document.write(`
+        <html>
+          <head>
+            <title>Invoice #${order.id}</title>
+            <style>
+              body { font-family: 'Helvetica Neue', Arial, sans-serif; padding: 40px; color: #333; }
+              .header { display: flex; justify-content: space-between; margin-bottom: 40px; border-bottom: 2px solid #000; padding-bottom: 20px; }
+              .logo { font-size: 24px; font-weight: 900; letter-spacing: -1px; }
+              .invoice-title { font-size: 32px; font-weight: bold; color: #1e3a8a; text-align: right; }
+              .details { display: flex; justify-content: space-between; margin-bottom: 30px; }
+              table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+              th { text-align: left; padding: 10px; background: #f9f9f9; font-size: 12px; text-transform: uppercase; border-bottom: 2px solid #ddd; }
+              .totals { float: right; width: 300px; }
+              .total-row { display: flex; justify-content: space-between; padding: 5px 0; }
+              .grand-total { font-size: 20px; font-weight: bold; border-top: 2px solid #000; padding-top: 10px; margin-top: 10px; }
+              .footer { margin-top: 60px; text-align: center; font-size: 12px; color: #999; border-top: 1px solid #eee; padding-top: 20px; }
+            </style>
+          </head>
+          <body onload="window.print()">
+            <div class="header">
+               <div>
+                  <div class="logo">LAKKI PHONES</div>
+                  <div style="font-size: 12px; margin-top: 5px;">Kuwait City, Al Hamra Tower<br/>Tel: 1800-LAKKI</div>
+               </div>
+               <div>
+                  <div class="invoice-title">INVOICE</div>
+                  <div style="text-align: right; margin-top: 5px;">
+                     <strong>#${order.id}</strong><br/>
+                     ${order.date}
+                  </div>
+               </div>
+            </div>
+
+            <div class="details">
+               <div>
+                  <strong>Bill To:</strong><br/>
+                  ${order.customer.name}<br/>
+                  ${order.customer.phone}<br/>
+                  ${order.customer.address}
+               </div>
+               <div style="text-align: right;">
+                  <strong>Status:</strong> ${order.status}<br/>
+                  <strong>Payment:</strong> ${order.paymentMethod}<br/>
+                  <strong>Terms:</strong> Due on Receipt
+               </div>
+            </div>
+
+            <table>
+               <thead>
+                  <tr>
+                     <th>Item Description</th>
+                     <th style="text-align: center;">Qty</th>
+                     <th style="text-align: right;">Unit Price</th>
+                     <th style="text-align: right;">Amount</th>
+                  </tr>
+               </thead>
+               <tbody>
+                  ${itemsHtml}
+               </tbody>
+            </table>
+
+            <div class="totals">
+               <div class="total-row">
+                  <span>Subtotal:</span>
+                  <span>${order.total - appSettings.deliveryFee} KWD</span>
+               </div>
+               <div class="total-row">
+                  <span>Delivery:</span>
+                  <span>${appSettings.deliveryFee} KWD</span>
+               </div>
+               <div class="total-row grand-total">
+                  <span>Total:</span>
+                  <span>${order.total} KWD</span>
+               </div>
+            </div>
+            
+            <div style="clear: both;"></div>
+
+            <div class="footer">
+               Thank you for shopping with Lakki Phones.<br/>
+               For support, contact support@lakkiphones.com
+            </div>
+          </body>
+        </html>
+      `);
+      popup.document.close();
   };
 
   const getFraudRisk = (order: Order) => {
@@ -109,8 +210,13 @@ export const OrderKanban: React.FC = () => {
                                  <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Total</span>
                                  <span className="text-sm font-black text-slate-900">{order.total} {appSettings.currency}</span>
                               </div>
-                              <div className="flex items-center gap-1 text-[10px] text-gray-400 font-medium bg-gray-50 px-2 py-1 rounded-lg">
-                                 <Calendar size={12}/> {order.date}
+                              <div className="flex items-center gap-2">
+                                 <button onClick={() => printInvoice(order)} className="p-1.5 bg-gray-100 text-gray-600 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition-colors" title="Print Invoice">
+                                    <Printer size={14} />
+                                 </button>
+                                 <div className="flex items-center gap-1 text-[10px] text-gray-400 font-medium bg-gray-50 px-2 py-1 rounded-lg">
+                                    <Calendar size={12}/> {order.date}
+                                 </div>
                               </div>
                            </div>
                         </div>

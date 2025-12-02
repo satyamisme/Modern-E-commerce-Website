@@ -25,6 +25,8 @@ export interface ProductVariant {
   price: number;
   stock: number;
   sku?: string;
+  barcode?: string;
+  imeis?: string[]; // List of specific serials/IMEIs for this variant
 }
 
 export interface Product {
@@ -55,6 +57,8 @@ export interface Product {
   reorderPoint?: number;
   supplier?: string;
   sku?: string;
+  barcode?: string;
+  imeiTracking?: boolean; // Requires scanning IMEI/Serial upon sale
   reviews?: Review[];
   seo?: {
     metaTitle?: string;
@@ -77,6 +81,7 @@ export interface CartItem extends Product {
   quantity: number;
   selectedColor?: string;
   selectedStorage?: string;
+  scannedImeis?: string[]; // Track IMEIs for this cart item
 }
 
 export interface ChatMessage {
@@ -199,6 +204,16 @@ export interface Notification {
   type: 'success' | 'warning' | 'info' | 'error';
   timestamp: number;
   read: boolean;
+}
+
+export interface TransferLog {
+  id: string;
+  productId: string;
+  fromLocationId: string;
+  toLocationId: string;
+  quantity: number;
+  userId: string;
+  timestamp: string;
 }
 
 export enum SortOption {

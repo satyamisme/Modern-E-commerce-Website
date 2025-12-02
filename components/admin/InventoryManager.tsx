@@ -1,14 +1,20 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useShop } from '../../context/ShopContext';
-import { Building2, Package, RefreshCw, ArrowRightLeft, Search, CheckCircle, Clock, X, AlertCircle, ArrowRight, Store, Plus, Trash2 } from 'lucide-react';
+import { Building2, Package, RefreshCw, ArrowRightLeft, Search, CheckCircle, Clock, X, AlertCircle, ArrowRight, Store, Plus, Trash2, ScanLine, Camera } from 'lucide-react';
 import { Product, Warehouse } from '../../types';
+import { Html5QrcodeScanner } from 'html5-qrcode';
 
 export const InventoryManager: React.FC = () => {
-  const { warehouses, products, showToast, addWarehouse, removeWarehouse, transferStock, updateProduct } = useShop();
+  const { warehouses, products, showToast, addWarehouse, removeWarehouse, transferStock, updateProduct, transferLogs } = useShop();
   const [searchTerm, setSearchTerm] = useState('');
   const [syncing, setSyncing] = useState(false);
   
+  // Scanner State
+  const [showCameraScanner, setShowCameraScanner] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const scannerRef = useRef<Html5QrcodeScanner | null>(null);
+
   // Transfer Modal State
   const [transferModal, setTransferModal] = useState<{ isOpen: boolean, product: Product | null }>({ isOpen: false, product: null });
   const [transferData, setTransferData] = useState({ fromId: '', toId: '', qty: 1 });
@@ -22,14 +28,50 @@ export const InventoryManager: React.FC = () => {
      capacity: 1000
   });
 
-  // Simulated Sync History
-  const [syncHistory, setSyncHistory] = useState([
-     { id: 1, type: 'Manual Sync', status: 'Success', time: '2 mins ago', items: 45 },
-     { id: 2, type: 'Auto-Sync', status: 'Success', time: '1 hour ago', items: 12 },
-     { id: 3, type: 'ERP Update', status: 'Failed', time: '5 hours ago', items: 0 },
-  ]);
+  const filteredProducts = products.filter(p => 
+      p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      (p.barcode && p.barcode.includes(searchTerm)) ||
+      (p.sku && p.sku.includes(searchTerm))
+  );
 
-  const filteredProducts = products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  // Focus Search for USB Scanner
+  useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+          // If scanner sends Enter and we aren't in a modal input, refocus search
+          if (!transferModal.isOpen && !showLocationModal && document.activeElement?.tagName !== 'INPUT') {
+              searchInputRef.current?.focus();
+          }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [transferModal.isOpen, showLocationModal]);
+
+  // Init Camera Scanner
+  useEffect(() => {
+      if (showCameraScanner && !scannerRef.current) {
+          const scanner = new Html5QrcodeScanner(
+              "reader", 
+              { fps: 10, qrbox: { width: 250, height: 250 } },
+              false
+          );
+          scanner.render((decodedText) => {
+              setSearchTerm(decodedText);
+              setShowCameraScanner(false);
+              showToast(`Scanned: ${decodedText}`, 'success');
+              scanner.clear();
+          }, (error) => {
+              // Ignore scan errors usually
+          });
+          scannerRef.current = scanner;
+      }
+      
+      return () => {
+          if (!showCameraScanner && scannerRef.current) {
+              scannerRef.current.clear().catch(err => console.error("Scanner clear error", err));
+              scannerRef.current = null;
+          }
+      };
+  }, [showCameraScanner]);
 
   const handleSync = () => {
      setSyncing(true);
@@ -49,10 +91,6 @@ export const InventoryManager: React.FC = () => {
         });
 
         setSyncing(false);
-        setSyncHistory(prev => [
-            { id: Date.now(), type: 'Manual Sync', status: 'Success', time: 'Just now', items: updatedCount },
-            ...prev
-        ]);
         showToast(`Sync complete! Updated ${updatedCount} products from ERP.`, 'success');
      }, 2000);
   };
@@ -153,17 +191,33 @@ export const InventoryManager: React.FC = () => {
           <div className="lg:col-span-2 bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-[500px]">
              <div className="p-6 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4 bg-gray-50/50">
                 <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2"><Package size={20}/> Global Stock Matrix</h2>
-                <div className="relative w-full sm:w-64">
-                   <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                   <input 
-                     type="text" 
-                     placeholder="Search SKU..." 
-                     value={searchTerm}
-                     onChange={e => setSearchTerm(e.target.value)}
-                     className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-primary transition-all"
-                   />
+                <div className="flex gap-2 w-full sm:w-auto">
+                    <div className="relative flex-1">
+                        <ScanLine size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input 
+                            ref={searchInputRef}
+                            type="text" 
+                            placeholder="Scan Barcode / Search SKU" 
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                            className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-primary transition-all font-mono"
+                            autoFocus
+                        />
+                    </div>
+                    <button 
+                        onClick={() => setShowCameraScanner(!showCameraScanner)}
+                        className={`p-2 rounded-lg border ${showCameraScanner ? 'bg-red-50 text-red-600 border-red-200' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                    >
+                        <Camera size={20} />
+                    </button>
                 </div>
              </div>
+             
+             {showCameraScanner && (
+                 <div className="p-4 bg-black/5 border-b border-gray-200 flex justify-center">
+                     <div id="reader" className="w-[300px] h-[300px] bg-white rounded-xl overflow-hidden"></div>
+                 </div>
+             )}
              
              <div className="flex-1 overflow-auto custom-scrollbar">
                 <table className="w-full text-left">
@@ -188,7 +242,7 @@ export const InventoryManager: React.FC = () => {
                                      <img src={p.image || `https://picsum.photos/seed/${p.imageSeed}/40/40`} className="w-10 h-10 rounded-lg border border-gray-200 bg-white object-contain" alt={p.name}/>
                                      <div>
                                         <p className="font-bold text-gray-900 text-sm line-clamp-1">{p.name}</p>
-                                        <p className="text-xs text-gray-400 font-mono">{p.sku || `SKU-${p.id.substring(0,4)}`}</p>
+                                        <p className="text-xs text-gray-400 font-mono">{p.barcode || p.sku || `SKU-${p.id.substring(0,4)}`}</p>
                                      </div>
                                   </div>
                                </td>
@@ -216,21 +270,36 @@ export const InventoryManager: React.FC = () => {
              </div>
           </div>
 
-          {/* Activity Log */}
+          {/* Activity Log (Real DB Data) */}
           <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 flex flex-col h-[500px]">
-             <h3 className="font-bold text-gray-900 mb-6 flex items-center gap-2"><Clock size={20}/> Sync Activity</h3>
+             <h3 className="font-bold text-gray-900 mb-6 flex items-center gap-2"><Clock size={20}/> Live Transfer Log</h3>
              <div className="flex-1 overflow-y-auto custom-scrollbar space-y-6 pr-2">
-                {syncHistory.map((log, i) => (
-                   <div key={log.id} className="relative pl-6 pb-6 border-l border-gray-100 last:pb-0">
-                      <div className={`absolute left-[-5px] top-0 w-2.5 h-2.5 rounded-full border-2 border-white shadow-sm ${log.status === 'Success' ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                      <div className="flex justify-between items-start mb-1">
-                         <span className="text-sm font-bold text-gray-900">{log.type}</span>
-                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${log.status === 'Success' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>{log.status}</span>
-                      </div>
-                      <p className="text-xs text-gray-500 mb-1">Processed {log.items} inventory updates.</p>
-                      <span className="text-[10px] text-gray-400 font-medium">{log.time}</span>
-                   </div>
-                ))}
+                {transferLogs.length === 0 ? (
+                    <div className="text-center text-gray-400 text-sm pt-20">No recent activity</div>
+                ) : (
+                    transferLogs.map((log) => {
+                        const fromName = warehouses.find(w => w.id === log.fromLocationId)?.name || 'Unknown';
+                        const toName = warehouses.find(w => w.id === log.toLocationId)?.name || 'Unknown';
+                        const prod = products.find(p => p.id === log.productId);
+                        
+                        return (
+                           <div key={log.id} className="relative pl-6 pb-6 border-l border-gray-100 last:pb-0">
+                              <div className="absolute left-[-5px] top-0 w-2.5 h-2.5 rounded-full border-2 border-white shadow-sm bg-blue-500"></div>
+                              <div className="flex justify-between items-start mb-1">
+                                 <span className="text-sm font-bold text-gray-900">Transfer</span>
+                                 <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-bold">{log.quantity} Items</span>
+                              </div>
+                              <p className="text-xs text-gray-600 mb-1 font-medium">{prod?.name || 'Item'}</p>
+                              <p className="text-[10px] text-gray-500 flex items-center gap-1">
+                                 {fromName} <ArrowRight size={10}/> {toName}
+                              </p>
+                              <span className="text-[10px] text-gray-400 font-medium block mt-1">
+                                 {new Date(log.timestamp).toLocaleString()}
+                              </span>
+                           </div>
+                        );
+                    })
+                )}
              </div>
           </div>
        </div>

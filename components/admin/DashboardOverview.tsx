@@ -1,13 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
-import { DollarSign, ShoppingBag, Package, Users, TrendingUp, ArrowUpRight, Activity, Zap, AlertTriangle, Lightbulb, TrendingDown, Target, Database, ArrowRight, RefreshCw, CheckCircle } from 'lucide-react';
+import { DollarSign, ShoppingBag, Package, Users, TrendingUp, ArrowUpRight, Activity, Zap, AlertTriangle, Lightbulb, TrendingDown, Target, Database, ArrowRight, RefreshCw, CheckCircle, Server, Globe } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts';
 import { useShop } from '../../context/ShopContext';
 
 const COLORS = ['#1e3a8a', '#d4af37', '#ff6b6b', '#10B981', '#8B5CF6'];
 
 export const DashboardOverview: React.FC = () => {
-  const { orders, products, appSettings, offlineReason, isOffline, retryConnection } = useShop();
+  const { orders, products, appSettings, offlineReason, isOffline, retryConnection, connectionDetails } = useShop();
   const [isVerifying, setIsVerifying] = useState(false);
 
   // Metrics Calculation
@@ -91,6 +91,45 @@ export const DashboardOverview: React.FC = () => {
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       
+      {/* SYSTEM HEALTH STATUS PANEL */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+              <div className="flex items-center gap-4">
+                  <div className={`p-3 rounded-xl ${isOffline ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+                      {isOffline ? <AlertTriangle size={24}/> : <Server size={24}/>}
+                  </div>
+                  <div>
+                      <h3 className="font-bold text-gray-900">System Status: {isOffline ? 'Offline Mode' : 'Online'}</h3>
+                      <p className="text-xs text-gray-500 flex items-center gap-2">
+                          <span className={`w-2 h-2 rounded-full ${isOffline ? 'bg-red-500' : 'bg-green-500'}`}></span>
+                          {isOffline ? 'Using Local Browser Storage' : 'Connected to Supabase Cloud'}
+                      </p>
+                  </div>
+              </div>
+              
+              {connectionDetails && (
+                  <div className="flex flex-col text-right text-xs">
+                      <p className="text-gray-400 font-mono">DB: {connectionDetails.url || 'N/A'}</p>
+                      {connectionDetails.message && (
+                          <p className={`font-bold ${isOffline ? 'text-red-600' : 'text-green-600'}`}>
+                              {connectionDetails.message}
+                          </p>
+                      )}
+                      {connectionDetails.syncError && (
+                          <p className="text-red-500 font-bold max-w-md truncate">Error: {connectionDetails.syncError}</p>
+                      )}
+                  </div>
+              )}
+
+              <button 
+                onClick={handleVerify}
+                className="px-4 py-2 bg-gray-100 text-gray-600 font-bold rounded-lg hover:bg-gray-200 transition-colors text-xs flex items-center gap-2"
+              >
+                 <RefreshCw size={14} className={isVerifying ? "animate-spin" : ""} /> Re-check
+              </button>
+          </div>
+      </div>
+
       {/* Schema Missing Alert */}
       {isOffline && offlineReason === 'SCHEMA' && (
           <div className="bg-red-600 rounded-2xl shadow-lg p-6 text-white flex flex-col sm:flex-row items-center justify-between gap-4">

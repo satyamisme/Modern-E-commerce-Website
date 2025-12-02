@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useShop } from '../context/ShopContext';
-import { Star, Plus, ShieldCheck, Zap, Heart, Truck, Check, Share2, Info, ArrowRight, Minus, ArrowLeftRight, ShoppingBag, CheckCircle, AlertCircle, Package, Clock, CreditCard, ChevronRight, PlayCircle, Maximize2, MessageCircle } from 'lucide-react';
+import { Star, Plus, ShieldCheck, Zap, Heart, Truck, Check, Share2, Info, ArrowRight, Minus, ArrowLeftRight, ShoppingBag, CheckCircle, AlertCircle, Package, Clock, CreditCard, ChevronRight, PlayCircle, Maximize2, MessageCircle, Layers, Cpu, Battery, Smartphone, ScanLine } from 'lucide-react';
 import { ProductCard } from '../components/ProductCard';
 import { SkeletonProductDetails } from '../components/SkeletonLoader';
 
@@ -20,31 +20,41 @@ export const ProductDetails: React.FC = () => {
 
   const [quantity, setQuantity] = useState(1);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  
+  // IMEI Tracking State (For Admin/Sales only)
+  const [imeiList, setImeiList] = useState<string[]>([]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
     setQuantity(1);
     if (product) {
-      // Initialize with first valid variant or defaults
-      let initialColor = product.colors?.[0] || '';
-      let initialStorage = product.storageOptions?.[0] || '';
+      // Default to empty strings to force user selection if options exist
+      // Only auto-select if there is exactly one option
+      let initialColor = product.colors && product.colors.length === 1 ? product.colors[0] : '';
+      let initialStorage = product.storageOptions && product.storageOptions.length === 1 ? product.storageOptions[0] : '';
 
-      // If variants exist, try to pick the first one with stock
-      if(product.variants && product.variants.length > 0) {
-          const inStockVariant = product.variants.find(v => v.stock > 0);
-          if (inStockVariant) {
-              initialColor = inStockVariant.color;
-              initialStorage = inStockVariant.storage;
-          }
+      // If already has variants logic from before, respect it but prefer force selection for better UX on complex items
+      if (initialColor && initialStorage) {
+          updateVariantInfo(initialColor, initialStorage);
+      } else {
+          setCurrentPrice(product.price);
+          setCurrentStock(product.stock);
       }
       
       setSelectedColor(initialColor);
       setSelectedStorage(initialStorage);
       
-      updateVariantInfo(initialColor, initialStorage);
       addToRecentlyViewed(product);
     }
   }, [id, product]);
+
+  // Sync IMEI input list size with quantity
+  useEffect(() => {
+      setImeiList(prev => {
+          if (quantity > prev.length) return [...prev, ...Array(quantity - prev.length).fill('')];
+          return prev.slice(0, quantity);
+      });
+  }, [quantity]);
 
   const updateVariantInfo = (color: string, storage: string) => {
       if(!product) return;
@@ -81,12 +91,12 @@ export const ProductDetails: React.FC = () => {
              }
          }
       }
-      updateVariantInfo(color, selectedStorage);
+      if (selectedStorage) updateVariantInfo(color, selectedStorage);
   };
 
   const handleStorageChange = (storage: string) => {
       setSelectedStorage(storage);
-      updateVariantInfo(selectedColor, storage);
+      if (selectedColor) updateVariantInfo(selectedColor, storage);
   };
 
   const isVariantValid = (color: string, storage: string) => {
@@ -101,23 +111,43 @@ export const ProductDetails: React.FC = () => {
      return variant && variant.stock > 0;
   };
 
+  const isSelectionComplete = () => {
+      if (!product) return false;
+      const needsColor = product.colors && product.colors.length > 0;
+      const needsStorage = product.storageOptions && product.storageOptions.length > 0;
+      
+      if (needsColor && !selectedColor) return false;
+      if (needsStorage && !selectedStorage) return false;
+      return true;
+  };
+
   const handleAddToCart = () => {
       if(!product) return;
+      if (!isSelectionComplete()) {
+          showToast('Please select Color and Storage first.', 'info');
+          return;
+      }
       if (quantity > currentStock) {
          showToast(`Only ${currentStock} units available for this selection.`, 'error');
          return;
       }
+      
       // Pass the specific variant details to cart
       addToCart({
           ...product, 
           price: currentPrice,
           selectedColor, 
           selectedStorage,
+          scannedImeis: imeiList.filter(i => i.trim() !== '') // Attach entered IMEIs
       });
   };
 
   const handleBuyNow = () => {
     if(!product) return;
+    if (!isSelectionComplete()) {
+        showToast('Please select Color and Storage first.', 'info');
+        return;
+    }
     if (quantity > currentStock) {
        showToast(`Only ${currentStock} available.`, 'error');
        return;
@@ -128,6 +158,10 @@ export const ProductDetails: React.FC = () => {
 
   const handleWhatsAppBuy = () => {
       if (!product) return;
+      if (!isSelectionComplete()) {
+          showToast('Please select Color and Storage options.', 'info');
+          return;
+      }
       
       const phone = appSettings.supportPhone.replace(/[^0-9]/g, '');
       if (!phone) {
@@ -148,6 +182,12 @@ Link: ${window.location.href}`;
       window.open(url, '_blank');
   };
 
+  const handleImeiChange = (index: number, val: string) => {
+      const newList = [...imeiList];
+      newList[index] = val;
+      setImeiList(newList);
+  };
+
   if (isLoading) return <SkeletonProductDetails />;
   
   if (!product) return (
@@ -164,6 +204,7 @@ Link: ${window.location.href}`;
   );
 
   const inStock = currentStock > 0;
+  const isStaff = user && (user.role === 'Admin' || user.role === 'Super Admin' || user.role === 'Sales');
 
   return (
     <div className="min-h-screen bg-gray-50/50 pb-24 md:pb-20 font-sans">
@@ -176,7 +217,7 @@ Link: ${window.location.href}`;
                  <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden relative group">
                     <div className="aspect-square p-10 flex items-center justify-center bg-white relative">
                        <img 
-                         src={product.images?.[selectedImageIndex] || `https://picsum.photos/seed/${product.imageSeed + selectedImageIndex}/800/800`} 
+                         src={product.images?.[selectedImageIndex] || product.image || `https://picsum.photos/seed/${product.imageSeed}/800/800`} 
                          alt={product.name}
                          className="w-full h-full object-contain hover:scale-105 transition-transform duration-700 ease-out" 
                        />
@@ -218,7 +259,17 @@ Link: ${window.location.href}`;
                      <span className="text-4xl font-black text-primary transition-all duration-300">{currentPrice.toLocaleString()} <span className="text-lg">KWD</span></span>
                      {product.originalPrice && <span className="text-lg text-gray-400 line-through font-medium">{product.originalPrice} KWD</span>}
                   </div>
+                  {product.monthlyPrice && (
+                      <p className="text-xs text-blue-600 font-medium mt-1 bg-blue-50 px-2 py-1 rounded-md inline-block w-fit">
+                          Installments from {product.monthlyPrice} KWD/mo
+                      </p>
+                  )}
                </div>
+
+               {/* Description Snippet */}
+               <p className="text-gray-600 leading-relaxed text-sm">
+                   {product.description}
+               </p>
 
                {/* Configuration */}
                <div className="space-y-6 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
@@ -226,7 +277,7 @@ Link: ${window.location.href}`;
                   {product.colors && product.colors.length > 0 && (
                      <div>
                         <div className="flex justify-between mb-3">
-                            <span className="text-sm font-bold text-gray-900">Color: <span className="text-primary">{selectedColor}</span></span>
+                            <span className="text-sm font-bold text-gray-900">Color: <span className="text-primary">{selectedColor || 'Select Color'}</span></span>
                         </div>
                         <div className="flex gap-3 flex-wrap">
                            {product.colors.map((color) => {
@@ -256,7 +307,7 @@ Link: ${window.location.href}`;
                   {product.storageOptions && product.storageOptions.length > 0 && (
                       <div>
                          <div className="flex justify-between mb-3">
-                            <span className="text-sm font-bold text-gray-900">Storage: <span className="text-primary">{selectedStorage}</span></span>
+                            <span className="text-sm font-bold text-gray-900">Storage: <span className="text-primary">{selectedStorage || 'Select Storage'}</span></span>
                          </div>
                          <div className="grid grid-cols-3 gap-3">
                             {product.storageOptions.map((storage) => {
@@ -316,10 +367,31 @@ Link: ${window.location.href}`;
                         </div>
                      </div>
 
-                     <button onClick={handleBuyNow} disabled={!inStock} className="w-full py-4 bg-secondary text-primary font-black rounded-xl hover:bg-amber-400 transition-all shadow-lg shadow-secondary/20 disabled:opacity-50 disabled:cursor-not-allowed">
-                        Buy Now
+                     {/* Staff Only: IMEI Entry */}
+                     {isStaff && product.imeiTracking && (
+                         <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                             <div className="flex items-center gap-2 mb-2 text-xs font-bold text-slate-700">
+                                 <ScanLine size={14}/> Enter IMEIs (Staff Only)
+                             </div>
+                             <div className="space-y-2">
+                                 {imeiList.map((imei, idx) => (
+                                     <input 
+                                        key={idx}
+                                        type="text" 
+                                        value={imei}
+                                        onChange={(e) => handleImeiChange(idx, e.target.value)}
+                                        className="w-full p-2 bg-white border border-gray-200 rounded-lg text-xs outline-none focus:border-primary font-mono"
+                                        placeholder={`Device #${idx + 1} IMEI/SN`}
+                                     />
+                                 ))}
+                             </div>
+                         </div>
+                     )}
+
+                     <button onClick={handleBuyNow} disabled={!inStock || !isSelectionComplete()} className="w-full py-4 bg-secondary text-primary font-black rounded-xl hover:bg-amber-400 transition-all shadow-lg shadow-secondary/20 disabled:opacity-50 disabled:cursor-not-allowed">
+                        {isSelectionComplete() ? 'Buy Now' : 'Select Options'}
                      </button>
-                     <button onClick={handleAddToCart} disabled={!inStock} className="w-full py-4 bg-primary text-white font-bold rounded-xl hover:bg-slate-800 transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2 disabled:opacity-50">
+                     <button onClick={handleAddToCart} disabled={!inStock || !isSelectionComplete()} className="w-full py-4 bg-primary text-white font-bold rounded-xl hover:bg-slate-800 transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                         <ShoppingBag size={18}/> Add to Cart
                      </button>
                      
@@ -338,6 +410,35 @@ Link: ${window.location.href}`;
                </div>
             </div>
         </div>
+
+        {/* Specifications Section */}
+        {product.specs && Object.keys(product.specs).length > 0 && (
+            <div className="max-w-5xl mx-auto mb-16">
+                <div className="flex items-center gap-3 mb-8">
+                    <Layers className="text-primary" size={28} />
+                    <h2 className="text-2xl font-black text-gray-900">Technical Specifications</h2>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {Object.entries(product.specs).map(([category, details]: [string, any]) => (
+                        <div key={category} className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
+                            <div className="bg-gray-50 px-6 py-3 border-b border-gray-100 flex items-center gap-2">
+                                <span className="font-bold text-gray-800 uppercase text-xs tracking-wider">{category}</span>
+                            </div>
+                            <div className="divide-y divide-gray-50">
+                                {Object.entries(details).map(([key, value]: [string, any]) => (
+                                    <div key={key} className="flex px-6 py-3 text-sm hover:bg-blue-50/30 transition-colors">
+                                        <span className="w-1/3 text-gray-500 font-medium">{key}</span>
+                                        <span className="w-2/3 text-gray-900 font-semibold">{value}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        )}
+
       </div>
     </div>
   );

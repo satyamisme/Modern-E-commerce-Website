@@ -1,7 +1,6 @@
 
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Product, CartItem, ToastMessage, User, Order, Address, Review, AppSettings, CustomerProfile, Warehouse, RoleDefinition, Permission, RoleType, ReturnRequest, Notification } from '../types';
+import { Product, CartItem, ToastMessage, User, Order, Address, Review, AppSettings, CustomerProfile, Warehouse, RoleDefinition, Permission, RoleType, ReturnRequest, Notification, TransferLog } from '../types';
 import { PRODUCTS as INITIAL_PRODUCTS } from '../data/products';
 import { APP_CONFIG } from '../config';
 import { supabase, diagnoseConnection } from '../lib/supabaseClient';
@@ -90,13 +89,15 @@ interface ShopContextType {
   availablePermissions: Permission[];
   returns: ReturnRequest[];
   notifications: Notification[];
+  transferLogs: TransferLog[];
   isOffline: boolean;
   offlineReason: 'NETWORK' | 'AUTH' | 'SCHEMA' | null;
+  connectionDetails: any; // New field for detailed diagnostics
   isLoading: boolean;
   
   // Actions
   setSearchQuery: (query: string) => void;
-  addToCart: (product: Product & { selectedColor?: string; selectedStorage?: string }) => void;
+  addToCart: (product: Product & { selectedColor?: string; selectedStorage?: string; scannedImeis?: string[] }) => void;
   removeFromCart: (productId: string) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   toggleCart: () => void;
@@ -168,6 +169,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // State Initialization - Prioritize Local Storage for Offline persistence
   const [isOffline, setIsOffline] = useState(APP_CONFIG.useMockData);
   const [offlineReason, setOfflineReason] = useState<'NETWORK' | 'AUTH' | 'SCHEMA' | null>(null);
+  const [connectionDetails, setConnectionDetails] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Core Data
@@ -179,6 +181,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [appSettings, setAppSettings] = useState<AppSettings>(() => getStoredData('lumina_settings', DEFAULT_SETTINGS));
   const [returns, setReturns] = useState<ReturnRequest[]>(() => getStoredData('lumina_returns', []));
   const [notifications, setNotifications] = useState<Notification[]>(() => getStoredData('lumina_notifications', []));
+  const [transferLogs, setTransferLogs] = useState<TransferLog[]>([]);
 
   // User Session Data (Always Local)
   const [cart, setCart] = useState<CartItem[]>(() => getStoredData('lumina_cart', []));
@@ -307,11 +310,13 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (APP_CONFIG.useMockData) {
         setIsOffline(true);
         setOfflineReason(null);
+        setConnectionDetails({ status: 'Mock Data Mode Enabled' });
         setIsLoading(false);
         return;
       }
 
       const status = await diagnoseConnection();
+      setConnectionDetails(status); // Store detailed diagnosis
       
       if (status.success) {
         setIsOffline(false);
@@ -346,9 +351,6 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (roleData && roleData.length > 0) {
                 setRoles(roleData);
                 localStorage.setItem('lumina_roles', JSON.stringify(roleData));
-            } else {
-                console.log("Empty roles table detected.");
-                // Keep local initial roles to avoid lockout, but allow seed
             }
 
             const { data: returnData } = await supabase.from('returns').select('*');
@@ -363,9 +365,15 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
                localStorage.setItem('lumina_settings', JSON.stringify({...appSettings, ...settingData}));
             }
 
+            const { data: logData } = await supabase.from('transfer_logs').select('*').order('timestamp', { ascending: false }).limit(50);
+            if (logData) {
+               setTransferLogs(logData);
+            }
+
             console.log("Sync Complete.");
-        } catch (err) {
+        } catch (err: any) {
             console.error("Data Sync Error:", err);
+            setConnectionDetails(prev => ({ ...prev, syncError: err.message }));
             showToast("Connected, but failed to sync some data.", "error");
         }
 
@@ -426,22 +434,9 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setProducts(prev => prev.filter(p => p.id !== payload.old.id));
          }
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'returns' }, (payload) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transfer_logs' }, (payload) => {
          if (payload.eventType === 'INSERT') {
-            const newReturn = payload.new as ReturnRequest;
-            setReturns(prev => [newReturn, ...prev]);
-            setNotifications(prev => [{
-               id: `notif-${Date.now()}`,
-               title: 'Return Request',
-               message: `New return request for Order ${newReturn.orderId}`,
-               type: 'warning',
-               timestamp: Date.now(),
-               read: false
-            }, ...prev]);
-         }
-         else if (payload.eventType === 'UPDATE') {
-            const updated = payload.new as ReturnRequest;
-            setReturns(prev => prev.map(r => r.id === updated.id ? updated : r));
+            setTransferLogs(prev => [payload.new as TransferLog, ...prev]);
          }
       })
       .subscribe();
@@ -579,8 +574,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return newOrder;
   };
 
-  // Standard Actions
-  const addToCart = (product: Product & { selectedColor?: string; selectedStorage?: string }) => {
+  const addToCart = (product: Product & { selectedColor?: string; selectedStorage?: string; scannedImeis?: string[] }) => {
     setCart(prev => {
       const cartItemId = `${product.id}-${product.selectedColor || ''}-${product.selectedStorage || ''}`;
       const existing = prev.find(item => {
@@ -648,10 +642,8 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setRecentlyViewed(prev => [product, ...prev.filter(p => p.id !== product.id)].slice(0, 10));
   };
 
-  // Auth & User - REAL IMPLEMENTATION
   const login = async (email: string, password?: string) => {
     if (isOffline) {
-        // Fallback Mock Login
         let role: RoleType = 'User';
         if (email.includes('admin')) role = 'Shop Admin';
         if (email.includes('super')) role = 'Super Admin';
@@ -661,9 +653,8 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     try {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password: password || 'password' }); // Assuming simplified login for now if password not provided
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password: password || 'password' });
         if (error) throw error;
-        // User state will be updated by onAuthStateChange listener
         showToast('Logged in successfully', 'success');
     } catch (error: any) {
         console.error("Login Error:", error);
@@ -689,7 +680,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
              email,
              password: password || 'password',
              options: {
-                 data: { name, role: 'User' } // Store minimal profile in metadata
+                 data: { name, role: 'User' }
              }
          });
          if (error) throw error;
@@ -703,12 +694,10 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const checkPermission = (permissionKey: string): boolean => {
     if (!user) return false;
     if (user.role === 'Super Admin') return true;
-    // Failsafe for admin emails if RBAC fails or is empty
     if (roles.length === 0 && (user.email.includes('admin') || user.email.includes('super'))) return true; 
 
     const roleDef = roles.find(r => r.name === user.role);
     if (!roleDef) {
-       // Emergency fallback
        if (user.email.includes('admin') || user.email.includes('super')) return true;
        return false;
     }
@@ -716,7 +705,6 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return roleDef.permissions.includes(permissionKey);
   };
 
-  // ... (Other standard actions: reviews, address, etc. kept same) ...
   const addReview = (productId: string, review: Omit<Review, 'id' | 'date'>) => {
      setProducts(prev => prev.map(p => { if (p.id === productId) { return { ...p, reviewsCount: (p.reviewsCount || 0) + 1 }; } return p; }));
      showToast('Review submitted', 'success');
@@ -726,7 +714,6 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const removeAddress = (id: string) => { if (user) setUser({ ...user, addresses: user.addresses.filter(a => a.id !== id) }); };
   const updateUserProfile = (data: Partial<User>) => { if (user) { setUser({ ...user, ...data }); showToast('Profile updated', 'success'); } };
 
-  // Admin Actions
   const updateOrderStatus = async (orderId: string, status: Order['status']) => {
      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
      if (!isOffline) await supabase.from('orders').update({ status }).eq('id', orderId);
@@ -795,13 +782,49 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const transferStock = async (fromId: string, toId: string, productId: string, quantity: number) => {
-      setWarehouses(prev => prev.map(w => {
+      // 1. Update UI Optimistically
+      const newWarehouses = warehouses.map(w => {
           if (w.id === fromId) return { ...w, utilization: Math.max(0, w.utilization - 1) };
           if (w.id === toId) return { ...w, utilization: Math.min(100, w.utilization + 1) };
           return w;
-      }));
+      });
+      setWarehouses(newWarehouses);
+
       const prod = products.find(p => p.id === productId);
-      const notif: Notification = { id: `notif-${Date.now()}`, title: 'Stock Transfer', message: `Moved ${quantity}x ${prod?.name || 'Item'} from ${warehouses.find(w => w.id === fromId)?.name} to ${warehouses.find(w => w.id === toId)?.name}`, type: 'info', timestamp: Date.now(), read: false };
+      const logEntry: TransferLog = {
+          id: `TRF-${Date.now()}`,
+          productId,
+          fromLocationId: fromId,
+          toLocationId: toId,
+          quantity,
+          userId: user?.id || 'admin',
+          timestamp: new Date().toISOString()
+      };
+
+      // 2. Persist to DB
+      if (!isOffline) {
+          // Update warehouses in DB
+          const fromW = newWarehouses.find(w => w.id === fromId);
+          const toW = newWarehouses.find(w => w.id === toId);
+          if (fromW) await supabase.from('warehouses').update({ utilization: fromW.utilization }).eq('id', fromId);
+          if (toW) await supabase.from('warehouses').update({ utilization: toW.utilization }).eq('id', toId);
+
+          // Insert Audit Log
+          const { error } = await supabase.from('transfer_logs').insert(logEntry);
+          if (error) console.error("Transfer Log Error:", error);
+          else setTransferLogs(prev => [logEntry, ...prev]);
+      } else {
+          setTransferLogs(prev => [logEntry, ...prev]);
+      }
+
+      const notif: Notification = { 
+          id: `notif-${Date.now()}`, 
+          title: 'Stock Transfer', 
+          message: `Moved ${quantity}x ${prod?.name || 'Item'} from ${warehouses.find(w => w.id === fromId)?.name} to ${warehouses.find(w => w.id === toId)?.name}`, 
+          type: 'info', 
+          timestamp: Date.now(), 
+          read: false 
+      };
       setNotifications(prev => [notif, ...prev]);
       showToast('Stock transfer recorded successfully', 'success');
   };
@@ -833,7 +856,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <ShopContext.Provider value={{
-      products, cart, wishlist, compareList, recentlyViewed, isCartOpen, searchQuery, user, orders, customers, warehouses, appSettings, roles, availablePermissions: AVAILABLE_PERMISSIONS, returns, notifications, isOffline, offlineReason, isLoading,
+      products, cart, wishlist, compareList, recentlyViewed, isCartOpen, searchQuery, user, orders, customers, warehouses, appSettings, roles, availablePermissions: AVAILABLE_PERMISSIONS, returns, notifications, transferLogs, isOffline, offlineReason, connectionDetails, isLoading,
       setSearchQuery, addToCart, removeFromCart, updateQuantity, toggleCart, clearCart, toggleWishlist, isInWishlist, addToCompare, removeFromCompare, isInCompare, addToRecentlyViewed,
       totalAmount, toast, showToast, login, logout, register, addReview, addAddress, removeAddress, createOrder, updateUserProfile,
       updateOrderStatus, deleteOrder, deleteProduct, updateProduct, addProduct, bulkUpsertProducts, uploadImage, updateSettings, updateCustomer, addRole, updateRole, deleteRole, checkPermission, seedRoles, seedDatabase,

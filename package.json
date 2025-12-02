@@ -16,7 +16,8 @@
     "@google/genai": "^1.30.0",
     "recharts": "^2.12.0",
     "@supabase/supabase-js": "^2.86.0",
-    "papaparse": "^5.4.1"
+    "papaparse": "^5.4.1",
+    "html5-qrcode": "^2.3.8"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
