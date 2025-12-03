@@ -5,8 +5,15 @@ import { PRODUCTS } from "../data/products";
 import { APP_CONFIG } from "../config";
 
 // --- GOOGLE SDK SETUP ---
-// Note: process.env.API_KEY is assumed to be available.
-const googleAI = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Note: process.env.API_KEY is assumed to be available via polyfill or import.meta.env
+// We wrap this to avoid immediate crash if key is missing (e.g. in CI/CD or initial load)
+let googleAI: any;
+try {
+    const key = process.env.API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY || 'dummy_key_for_init';
+    googleAI = new GoogleGenAI({ apiKey: key });
+} catch (e) {
+    console.warn("GoogleGenAI init failed:", e);
+}
 
 // --- OPENAI COMPATIBLE FETCH (Grok, DeepSeek, Perplexity, OpenAI) ---
 async function fetchOpenAICompatible(
@@ -62,10 +69,11 @@ Your goal is to help customers find the perfect phone, compare models, and answe
 
 export const sendMessageToGemini = async (message: string): Promise<string> => {
   try {
-    const apiKey = process.env.API_KEY || '';
+    const apiKey = process.env.API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY || '';
     
     // 1. Google Gemini (Default)
     if (APP_CONFIG.aiProvider === 'google') {
+        if (!googleAI) return "AI Service not initialized.";
         const chat = googleAI.chats.create({
             model: 'gemini-2.5-flash',
             config: { systemInstruction: SYSTEM_INSTRUCTION },

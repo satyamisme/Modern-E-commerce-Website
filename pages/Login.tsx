@@ -53,16 +53,25 @@ export const Login: React.FC = () => {
     
     try {
         // 2. Try Online Login
-        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ 
+        let signInData, signInError;
+
+        // Mock fallback if envs are missing
+        if (!import.meta.env.VITE_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL.includes('your-project')) {
+             console.warn("No Supabase URL, forcing offline mode");
+             throw new Error('FORCE_OFFLINE');
+        }
+
+        const result = await supabase.auth.signInWithPassword({
             email: adminEmail, 
             password: adminPass 
         });
+        signInData = result.data;
+        signInError = result.error;
 
         if (!signInError && signInData.session) {
             showToast('Logged in successfully (Online)', 'success');
             // ShopContext will pick up session from supabase.auth listener automatically
-            // But we force a reload just to be sure state is clean if coming from offline
-            setTimeout(() => window.location.reload(), 500);
+            // We NO LONGER reload, we let the context update handle the redirect
             return;
         }
 
@@ -78,7 +87,7 @@ export const Login: React.FC = () => {
 
              if (signUpData.session) {
                  showToast('Admin account created! Signing in...', 'success');
-                 setTimeout(() => window.location.reload(), 500);
+                 // Let context listener handle it
                  return;
              }
         }
@@ -107,9 +116,11 @@ export const Login: React.FC = () => {
         
         showToast("Using Offline Mode...", "success");
         
-        // Force reload to pick up local storage state cleanly and re-init context with isOffline=true
+        // No reload needed, context should pick up localStorage change if we trigger a re-mount or similar.
+        // But since ShopContext only reads localStorage on init, we might need to force a reload here
+        // OR ideally, we should expose a method in context to set user manually.
+        // For now, we will reload ONLY for offline mode fallbacks as that's a rare edge case.
         setTimeout(() => {
-            window.location.href = '#/admin';
             window.location.reload();
         }, 500);
     } finally {
