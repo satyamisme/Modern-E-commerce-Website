@@ -226,6 +226,14 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const init = async () => {
+      // Safety timeout to prevent infinite loading
+      const safetyTimer = setTimeout(() => {
+          if (isLoading) {
+              console.warn("Forcing loading completion due to timeout");
+              setIsLoading(false);
+          }
+      }, 5000);
+
       setIsLoading(true);
       try {
           // 1. Always attempt ONLINE first, ignore previous offline flags initially
@@ -274,12 +282,38 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setIsOffline(true);
           await loadOfflineData();
       } finally {
+          clearTimeout(safetyTimer);
           setIsLoading(false);
       }
   };
 
   useEffect(() => {
       init();
+
+      // Listen for auth state changes to keep session in sync across tabs/refreshes
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'SIGNED_IN' && session?.user) {
+          const userData: User = {
+            id: session.user.id,
+            email: session.user.email || '',
+            name: session.user.user_metadata?.name || 'User',
+            role: session.user.user_metadata?.role || 'User',
+            avatar: `https://ui-avatars.com/api/?name=${session.user.user_metadata?.name || 'User'}`,
+            addresses: []
+          };
+          setUser(userData);
+          localStorage.setItem('lumina_user', JSON.stringify(userData));
+          setIsOffline(false); // Assume online if we got an auth event
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+          localStorage.removeItem('lumina_user');
+          // We don't necessarily go offline, just logged out
+        }
+      });
+
+      return () => {
+        subscription.unsubscribe();
+      };
   }, []);
 
   const retryConnection = async () => {

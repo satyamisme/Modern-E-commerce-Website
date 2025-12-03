@@ -53,10 +53,20 @@ export const Login: React.FC = () => {
     
     try {
         // 2. Try Online Login
-        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ 
+        let signInData, signInError;
+
+        // Mock fallback if envs are missing
+        if (!import.meta.env.VITE_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL.includes('your-project')) {
+             console.warn("No Supabase URL, forcing offline mode");
+             throw new Error('FORCE_OFFLINE');
+        }
+
+        const result = await supabase.auth.signInWithPassword({
             email: adminEmail, 
             password: adminPass 
         });
+        signInData = result.data;
+        signInError = result.error;
 
         if (!signInError && signInData.session) {
             showToast('Logged in successfully (Online)', 'success');
