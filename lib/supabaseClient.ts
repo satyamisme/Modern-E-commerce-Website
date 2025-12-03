@@ -15,7 +15,12 @@ const SUPABASE_ANON_KEY = customDB?.key || process.env.NEXT_PUBLIC_SUPABASE_ANON
 // Create client
 export const supabase = createClient(
   SUPABASE_URL, 
-  SUPABASE_ANON_KEY
+  SUPABASE_ANON_KEY,
+  {
+    auth: {
+      persistSession: true
+    }
+  }
 );
 
 export const isSupabaseConfigured = () => {
