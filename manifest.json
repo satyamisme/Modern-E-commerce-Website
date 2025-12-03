@@ -4,7 +4,7 @@
   "name": "LAKKI PHONES | Premium Mobile Store",
   "icons": [
     {
-      "src": "https://cdn.lucide.dev/smartphone.svg",
+      "src": "/smartphone.svg",
       "type": "image/svg+xml",
       "sizes": "512x512"
     }
