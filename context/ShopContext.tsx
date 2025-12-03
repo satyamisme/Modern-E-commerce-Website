@@ -130,7 +130,15 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [recentlyViewed, setRecentlyViewed] = useState<Product[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [user, setUser] = useState<User | null>(null);
+
+  // Initialize user from local storage immediately to prevent flicker/redirect loops
+  const [user, setUser] = useState<User | null>(() => {
+      try {
+          const stored = localStorage.getItem('lumina_user');
+          return stored ? JSON.parse(stored) : null;
+      } catch (e) { return null; }
+  });
+
   const [orders, setOrders] = useState<Order[]>([]);
   const [customers, setCustomers] = useState<CustomerProfile[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -226,6 +234,15 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const init = async () => {
+      // Safety timeout to prevent infinite loading
+      const safetyTimer = setTimeout(() => {
+          // Only force complete if still loading. If we have a user, it's fine.
+          if (isLoading) {
+              console.warn("Forcing loading completion due to timeout");
+              setIsLoading(false);
+          }
+      }, 5000);
+
       setIsLoading(true);
       try {
           // 1. Always attempt ONLINE first, ignore previous offline flags initially
@@ -241,14 +258,18 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
               // Restore Online Session
               const { data: { session } } = await supabase.auth.getSession();
               if (session?.user) {
-                  setUser({
-                      id: session.user.id,
-                      email: session.user.email || '',
-                      name: session.user.user_metadata.name || 'User',
-                      role: session.user.user_metadata.role || 'User',
-                      avatar: `https://ui-avatars.com/api/?name=${session.user.user_metadata.name || 'User'}`,
-                      addresses: []
-                  });
+                  // Only update if different to avoid re-renders
+                  const newId = session.user.id;
+                  if (!user || user.id !== newId) {
+                      setUser({
+                          id: session.user.id,
+                          email: session.user.email || '',
+                          name: session.user.user_metadata.name || 'User',
+                          role: session.user.user_metadata.role || 'User',
+                          avatar: `https://ui-avatars.com/api/?name=${session.user.user_metadata.name || 'User'}`,
+                          addresses: []
+                      });
+                  }
               }
               // TODO: Fetch real data from Supabase here
               // For now, relies on realtime subscriptions or separate fetches
@@ -274,12 +295,38 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setIsOffline(true);
           await loadOfflineData();
       } finally {
+          clearTimeout(safetyTimer);
           setIsLoading(false);
       }
   };
 
   useEffect(() => {
       init();
+
+      // Listen for auth state changes to keep session in sync across tabs/refreshes
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'SIGNED_IN' && session?.user) {
+          const userData: User = {
+            id: session.user.id,
+            email: session.user.email || '',
+            name: session.user.user_metadata?.name || 'User',
+            role: session.user.user_metadata?.role || 'User',
+            avatar: `https://ui-avatars.com/api/?name=${session.user.user_metadata?.name || 'User'}`,
+            addresses: []
+          };
+          setUser(userData);
+          localStorage.setItem('lumina_user', JSON.stringify(userData));
+          setIsOffline(false); // Assume online if we got an auth event
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+          localStorage.removeItem('lumina_user');
+          // We don't necessarily go offline, just logged out
+        }
+      });
+
+      return () => {
+        subscription.unsubscribe();
+      };
   }, []);
 
   const retryConnection = async () => {
