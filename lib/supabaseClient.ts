@@ -9,8 +9,9 @@ const customDB = storedConfig ? JSON.parse(storedConfig) : null;
 // Safe access to environment variables or hardcoded values provided by user
 // Prioritize Custom (Admin Panel) -> Env Vars (Deployment) -> Explicit Hardcoded (User Provided)
 // This ensures the app works in all environments: Local, Cloud, and Demo.
-const SUPABASE_URL = customDB?.url || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://wnumllyicvloascctlqk.supabase.co';
-const SUPABASE_ANON_KEY = customDB?.key || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndudW1sbHlpY3Zsb2FzY2N0bHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0Nzg5MjksImV4cCI6MjA4MDA1NDkyOX0.WpcfkD5qRlGBLi1q8PhSfJiD5wMskuvY0QbF_53xeV0';
+// VITE USES import.meta.env, NOT process.env
+const SUPABASE_URL = customDB?.url || import.meta.env.VITE_SUPABASE_URL || 'https://wnumllyicvloascctlqk.supabase.co';
+const SUPABASE_ANON_KEY = customDB?.key || import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndudW1sbHlpY3Zsb2FzY2N0bHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0Nzg5MjksImV4cCI6MjA4MDA1NDkyOX0.WpcfkD5qRlGBLi1q8PhSfJiD5wMskuvY0QbF_53xeV0';
 
 // Create client
 export const supabase = createClient(

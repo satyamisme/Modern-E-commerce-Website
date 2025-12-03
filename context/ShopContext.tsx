@@ -226,6 +226,14 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const init = async () => {
+      // Safety timeout to prevent infinite loading
+      const safetyTimer = setTimeout(() => {
+          if (isLoading) {
+              console.warn("Forcing loading completion due to timeout");
+              setIsLoading(false);
+          }
+      }, 5000);
+
       setIsLoading(true);
       try {
           // 1. Always attempt ONLINE first, ignore previous offline flags initially
@@ -274,6 +282,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setIsOffline(true);
           await loadOfflineData();
       } finally {
+          clearTimeout(safetyTimer);
           setIsLoading(false);
       }
   };
