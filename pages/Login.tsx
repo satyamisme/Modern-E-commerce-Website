@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useShop } from '../context/ShopContext';
@@ -38,7 +39,6 @@ export const Login: React.FC = () => {
 
     await login(email.trim(), password);
     setIsLoading(false);
-    // Navigation is handled by the useEffect above when 'user' state updates
   };
 
   const handleAdminShortcut = async () => {
@@ -48,21 +48,26 @@ export const Login: React.FC = () => {
     setIsLoading(true);
     showToast('Authenticating Super Admin...', 'info');
     
+    // 1. CLEAR STALE FLAGS FIRST
+    localStorage.removeItem('lumina_force_offline');
+    
     try {
-        // 1. Try Online Login
+        // 2. Try Online Login
         const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ 
             email: adminEmail, 
             password: adminPass 
         });
 
         if (!signInError && signInData.session) {
-            showToast('Logged in successfully', 'success');
-            navigate('/admin');
+            showToast('Logged in successfully (Online)', 'success');
+            // ShopContext will pick up session from supabase.auth listener automatically
+            // But we force a reload just to be sure state is clean if coming from offline
+            setTimeout(() => window.location.reload(), 500);
             return;
         }
 
-        // 2. If Login Failed, Try Registration (Auto-Setup for fresh DB)
-        if (signInError) {
+        // 3. If Login Failed, Try Registration (Auto-Setup for fresh DB)
+        if (signInError && (signInError.message.includes('Invalid') || signInError.message.includes('credentials'))) {
              console.log("Online login failed, attempting registration...");
              
              const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
@@ -73,17 +78,17 @@ export const Login: React.FC = () => {
 
              if (signUpData.session) {
                  showToast('Admin account created! Signing in...', 'success');
-                 navigate('/admin');
+                 setTimeout(() => window.location.reload(), 500);
                  return;
              }
-             
-             // If we reach here, both Login and Registration failed.
-             console.warn("Online auth failed. Activating Offline Mode.");
-             throw new Error('FORCE_OFFLINE');
         }
+        
+        // 4. If we reach here, we failed to connect or auth online.
+        console.warn("Online auth failed. Activating Offline Mode.");
+        throw new Error('FORCE_OFFLINE');
 
     } catch (err: any) {
-        // 3. Force Offline Mode & PERSIST IT
+        // 5. Force Offline Mode & PERSIST IT
         console.log("Entering Offline Admin Session...");
         
         // Flag to tell ShopContext to stay offline on reload

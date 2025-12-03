@@ -1,13 +1,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { useShop } from '../../context/ShopContext';
-import { Save, Globe, DollarSign, Truck, Cpu, CreditCard, Share2, Database, AlertTriangle, CheckCircle, RefreshCw, RotateCcw, Copy, Code, Shield, MessageCircle, CloudDownload, Monitor, Camera, ScanLine } from 'lucide-react';
+import { Save, Globe, DollarSign, Truck, Cpu, CreditCard, Share2, Database, AlertTriangle, CheckCircle, RefreshCw, RotateCcw, Copy, Code, Shield, MessageCircle, CloudDownload, Monitor, Camera, ScanLine, HardDrive, ArrowRightLeft, Upload, Download, Server, Cloud, Lock } from 'lucide-react';
 import { AppSettings } from '../../types';
 import { updateDatabaseConfig, getDatabaseConfig, resetDatabaseConfig, checkConnection } from '../../lib/supabaseClient';
 import { MASTER_SCHEMA_SQL } from '../../lib/schemaDefinition';
+import { getStorageEngine } from '../../lib/offlineStorage';
 
 export const SystemConfig: React.FC = () => {
-  const { appSettings, updateSettings, showToast, isOffline, offlineReason, seedRoles, seedDatabase } = useShop();
+  const { appSettings, updateSettings, showToast, isOffline, offlineReason, seedRoles, seedDatabase, migrateToEngine } = useShop();
   const [formData, setFormData] = useState<AppSettings>(appSettings);
   const [activeSection, setActiveSection] = useState<'general' | 'finance' | 'ai' | 'payments' | 'social' | 'database' | 'hardware'>('general');
   const [isLoading, setIsLoading] = useState(false);
@@ -21,8 +22,10 @@ export const SystemConfig: React.FC = () => {
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [scanningTest, setScanningTest] = useState('');
 
+  // Migration State
+  const [isMigrating, setIsMigrating] = useState(false);
+
   useEffect(() => {
-     // If global state says Missing Tables, use that. Otherwise check connection.
      if (offlineReason === 'SCHEMA') {
          setDbStatus('Missing Tables');
      } else {
@@ -98,6 +101,55 @@ export const SystemConfig: React.FC = () => {
       }
   };
 
+  const handleMigration = async (target: 'localstorage' | 'indexeddb') => {
+      if (target === appSettings.storageEngine) return;
+      if (confirm(`Migrate all data to ${target}? This will overwrite existing data in the target engine.`)) {
+          setIsMigrating(true);
+          await migrateToEngine(target);
+          setFormData(prev => ({ ...prev, storageEngine: target }));
+          setIsMigrating(false);
+      }
+  };
+
+  // Generic Export/Import for any provider
+  const handleExportData = async () => {
+      try {
+          const engine = getStorageEngine(appSettings.storageEngine);
+          const json = await engine.exportData();
+          const blob = new Blob([json], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `lakki-backup-${new Date().toISOString().split('T')[0]}.json`;
+          a.click();
+          showToast("Backup downloaded successfully", "success");
+      } catch (e) {
+          console.error(e);
+          showToast("Export failed", "error");
+      }
+  };
+
+  const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      
+      if (confirm("This will OVERWRITE your current local database with the backup file. Are you sure?")) {
+          const reader = new FileReader();
+          reader.onload = async (ev) => {
+              try {
+                  const json = ev.target?.result as string;
+                  const engine = getStorageEngine(appSettings.storageEngine);
+                  await engine.importData(json);
+                  showToast("Data imported successfully! Reloading...", "success");
+                  setTimeout(() => window.location.reload(), 1500);
+              } catch (err) {
+                  showToast("Invalid backup file", "error");
+              }
+          };
+          reader.readAsText(file);
+      }
+  };
+
   const detectCameras = async () => {
       if (!window.isSecureContext) {
           showToast('Camera access requires HTTPS or Localhost.', 'error');
@@ -154,7 +206,7 @@ export const SystemConfig: React.FC = () => {
         <div className="lg:w-64 flex-shrink-0">
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-2 space-y-1 sticky top-24">
                 <SectionButton id="general" icon={Globe} label="General Store" />
-                <SectionButton id="database" icon={Database} label="Database" />
+                <SectionButton id="database" icon={Database} label="Data Architecture" />
                 <SectionButton id="hardware" icon={Monitor} label="Hardware & Devices" />
                 <SectionButton id="finance" icon={DollarSign} label="Financials" />
                 <SectionButton id="social" icon={Share2} label="Social & Contact" />
@@ -283,120 +335,189 @@ export const SystemConfig: React.FC = () => {
                         </div>
                     )}
 
-                    {/* ... (Database Section and others kept same) ... */}
                     {activeSection === 'database' && (
                         <div className="space-y-8">
-                            {/* Connection Status */}
-                            <div className={`p-4 rounded-xl border flex items-center gap-3 ${dbStatus === 'Connected' ? 'bg-green-50 border-green-100 text-green-700' : dbStatus === 'Missing Tables' ? 'bg-yellow-50 border-yellow-100 text-yellow-800' : 'bg-red-50 border-red-100 text-red-700'}`}>
-                                {dbStatus === 'Connected' ? <CheckCircle size={20}/> : <AlertTriangle size={20}/>}
-                                <div className="flex-1">
-                                    <span className="font-bold text-sm block">Status: {dbStatus}</span>
-                                    {dbStatus === 'Missing Tables' && <span className="text-xs">Connected to Supabase, but tables are missing. Run the script below.</span>}
-                                </div>
-                                {dbConfig.isCustom && <span className="text-xs bg-white/50 px-2 py-0.5 rounded font-bold border border-black/5">Custom Override Active</span>}
-                            </div>
-
-                            {/* Tools Section */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {/* Role Repair Tool */}
-                                <div className="bg-yellow-50 border border-yellow-100 p-4 rounded-xl flex justify-between items-center">
-                                    <div>
-                                        <h4 className="font-bold text-yellow-900 text-sm flex items-center gap-2"><Shield size={16}/> Emergency Role Repair</h4>
-                                        <p className="text-xs text-yellow-700 mt-1">Restore default permissions if dashboard is locked.</p>
-                                    </div>
+                            {/* Provider Switcher */}
+                            <div className="bg-white p-4 rounded-xl border border-gray-200 mb-6">
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-3">Database Provider</label>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                     <button 
-                                        onClick={handleRepairRoles}
-                                        className="px-3 py-2 bg-yellow-100 text-yellow-800 font-bold rounded-lg hover:bg-yellow-200 transition-colors text-xs border border-yellow-200"
+                                        onClick={() => handleChange('dbProvider', 'supabase')}
+                                        className={`p-3 rounded-lg border text-sm font-bold flex flex-col items-center gap-2 transition-all ${formData.dbProvider === 'supabase' ? 'border-green-500 bg-green-50 text-green-800 ring-2 ring-green-200' : 'border-gray-200 hover:border-gray-300'}`}
                                     >
-                                        Repair Roles
+                                        <Cloud size={20} /> Supabase (SQL)
                                     </button>
-                                </div>
-
-                                {/* Seed Data Tool */}
-                                <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex justify-between items-center">
-                                    <div>
-                                        <h4 className="font-bold text-blue-900 text-sm flex items-center gap-2"><CloudDownload size={16}/> Seed Demo Data</h4>
-                                        <p className="text-xs text-blue-700 mt-1">Populate empty database with products & inventory.</p>
-                                    </div>
                                     <button 
-                                        onClick={handleSeedData}
-                                        disabled={isOffline}
-                                        className="px-3 py-2 bg-blue-100 text-blue-800 font-bold rounded-lg hover:bg-blue-200 transition-colors text-xs border border-blue-200 disabled:opacity-50"
+                                        onClick={() => handleChange('dbProvider', 'local')}
+                                        className={`p-3 rounded-lg border text-sm font-bold flex flex-col items-center gap-2 transition-all ${formData.dbProvider === 'local' ? 'border-blue-500 bg-blue-50 text-blue-800 ring-2 ring-blue-200' : 'border-gray-200 hover:border-gray-300'}`}
                                     >
-                                        Seed Data
+                                        <HardDrive size={20} /> Local (Offline)
+                                    </button>
+                                    {/* Placeholders for future expansion */}
+                                    <button disabled className="p-3 rounded-lg border border-dashed border-gray-200 text-gray-400 text-sm font-bold flex flex-col items-center gap-2 cursor-not-allowed">
+                                        <Database size={20} /> MongoDB
+                                    </button>
+                                    <button disabled className="p-3 rounded-lg border border-dashed border-gray-200 text-gray-400 text-sm font-bold flex flex-col items-center gap-2 cursor-not-allowed">
+                                        <Server size={20} /> Firebase
                                     </button>
                                 </div>
                             </div>
 
-                            {/* Schema Setup Wizard */}
-                            <div className="bg-gradient-to-r from-blue-900 to-slate-900 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
-                                <div className="relative z-10">
-                                    <h3 className="font-bold text-lg mb-2 flex items-center gap-2 text-white"><Code size={20} className="text-secondary"/> Database Initialization</h3>
-                                    <p className="text-blue-200 text-sm mb-6 max-w-xl">
-                                        To enable Online Mode, you must create the required tables in your Supabase project. 
-                                        Copy the SQL below and run it in the <a href="https://supabase.com/dashboard/project/_/sql" target="_blank" className="underline text-white font-bold hover:text-secondary">Supabase SQL Editor</a>.
-                                    </p>
+                            {/* SUPABASE CONFIG */}
+                            {formData.dbProvider === 'supabase' && (
+                                <div className="bg-green-50/50 rounded-2xl p-6 border border-green-100">
+                                    <h3 className="font-bold text-lg mb-6 flex items-center gap-2 text-green-900"><Database size={20}/> Cloud Connection Settings</h3>
                                     
-                                    <div className="relative">
+                                    {/* Connection Status */}
+                                    <div className={`p-4 rounded-xl border flex items-center gap-3 mb-6 ${dbStatus === 'Connected' ? 'bg-green-100 border-green-200 text-green-800' : dbStatus === 'Missing Tables' ? 'bg-yellow-50 border-yellow-100 text-yellow-800' : 'bg-red-50 border-red-100 text-red-700'}`}>
+                                        {dbStatus === 'Connected' ? <CheckCircle size={20}/> : <AlertTriangle size={20}/>}
+                                        <div className="flex-1">
+                                            <span className="font-bold text-sm block">Status: {dbStatus}</span>
+                                            {dbStatus === 'Missing Tables' && <span className="text-xs">Connected, but tables are missing. Run the SQL Script below.</span>}
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-5">
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Project URL</label>
+                                            <input 
+                                                type="text" 
+                                                value={dbInput.url}
+                                                onChange={(e) => setDbInput(prev => ({...prev, url: e.target.value}))}
+                                                className="w-full p-3 bg-white border border-gray-200 rounded-xl text-gray-700 font-mono text-sm focus:border-green-500 outline-none"
+                                                placeholder="https://your-project.supabase.co"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Anon Public Key</label>
+                                            <div className="relative">
+                                                <input 
+                                                    type="text" 
+                                                    value={dbInput.key}
+                                                    onChange={(e) => setDbInput(prev => ({...prev, key: e.target.value}))}
+                                                    className="w-full p-3 bg-white border border-gray-200 rounded-xl text-gray-700 font-mono text-sm focus:border-green-500 outline-none"
+                                                    placeholder="eyJhbGciOiJIUzI1NiIsIn..."
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex gap-4 mt-8">
+                                        <button 
+                                            onClick={handleSaveDatabase}
+                                            className="flex-1 py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 transition-colors shadow-lg flex justify-center items-center gap-2"
+                                        >
+                                            <RefreshCw size={18}/> Update & Connect
+                                        </button>
+                                        {dbConfig.isCustom && (
+                                            <button 
+                                                onClick={handleResetDatabase}
+                                                className="px-6 py-3 bg-white border border-gray-200 text-gray-600 font-bold rounded-xl hover:bg-gray-50 transition-colors flex items-center gap-2"
+                                            >
+                                                <RotateCcw size={18}/> Reset
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* Schema Wizard */}
+                                    <div className="mt-8 pt-8 border-t border-green-200">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <h4 className="font-bold text-green-900 text-sm">Database Initialization Script</h4>
+                                            <button onClick={handleCopySQL} className="text-xs bg-green-100 text-green-800 px-3 py-1.5 rounded-lg font-bold hover:bg-green-200 flex items-center gap-1"><Copy size={12}/> Copy SQL</button>
+                                        </div>
                                         <textarea 
                                             readOnly 
                                             value={MASTER_SCHEMA_SQL} 
-                                            className="w-full h-48 bg-black/30 border border-white/10 rounded-xl p-4 font-mono text-xs text-blue-100 focus:outline-none resize-none"
+                                            className="w-full h-32 bg-slate-900 border border-slate-700 rounded-xl p-4 font-mono text-[10px] text-green-400 focus:outline-none resize-none"
                                         />
-                                        <button 
-                                            onClick={handleCopySQL}
-                                            className="absolute top-2 right-2 px-3 py-1.5 bg-secondary text-primary text-xs font-bold rounded-lg hover:bg-white transition-colors flex items-center gap-1 shadow-md"
-                                        >
-                                            <Copy size={12} /> Copy SQL
-                                        </button>
                                     </div>
                                 </div>
-                            </div>
+                            )}
 
-                            {/* Config Form */}
-                            <div className="bg-gray-50 rounded-2xl p-6 border border-gray-200">
-                                <h3 className="font-bold text-lg mb-6 flex items-center gap-2 text-gray-900"><Database size={20} className="text-gray-500"/> Connection Settings</h3>
-                                
-                                <div className="space-y-5">
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Project URL</label>
-                                        <input 
-                                            type="text" 
-                                            value={dbInput.url}
-                                            onChange={(e) => setDbInput(prev => ({...prev, url: e.target.value}))}
-                                            className="w-full p-3 bg-white border border-gray-200 rounded-xl text-gray-700 font-mono text-sm focus:border-primary outline-none transition-colors"
-                                            placeholder="https://your-project.supabase.co"
-                                        />
+                            {/* LOCAL / OFFLINE CONFIG */}
+                            {formData.dbProvider === 'local' && (
+                                <div className="bg-blue-50/50 p-6 rounded-2xl border border-blue-100">
+                                    <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><HardDrive size={20}/> Offline Storage Engine</h3>
+                                    <p className="text-sm text-gray-500 mb-6">Select where data is stored within the browser.</p>
+                                    
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                                        <label className={`cursor-pointer p-4 rounded-xl border-2 transition-all ${formData.storageEngine === 'indexeddb' ? 'border-blue-500 bg-blue-100' : 'border-gray-200 hover:border-gray-300 bg-white'}`}>
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <input type="radio" checked={formData.storageEngine === 'indexeddb'} onChange={() => handleChange('storageEngine', 'indexeddb')} className="hidden" />
+                                                <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${formData.storageEngine === 'indexeddb' ? 'border-blue-500' : 'border-gray-300'}`}>
+                                                    {formData.storageEngine === 'indexeddb' && <div className="w-2 h-2 bg-blue-500 rounded-full"></div>}
+                                                </div>
+                                                <span className="font-bold text-gray-900">IndexedDB (Recommended)</span>
+                                            </div>
+                                            <p className="text-xs text-gray-500 pl-7">High performance, unlimited storage. Best for images & large catalogs.</p>
+                                        </label>
+
+                                        <label className={`cursor-pointer p-4 rounded-xl border-2 transition-all ${formData.storageEngine === 'localstorage' ? 'border-blue-500 bg-blue-100' : 'border-gray-200 hover:border-gray-300 bg-white'}`}>
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <input type="radio" checked={formData.storageEngine === 'localstorage'} onChange={() => handleChange('storageEngine', 'localstorage')} className="hidden" />
+                                                <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${formData.storageEngine === 'localstorage' ? 'border-blue-500' : 'border-gray-300'}`}>
+                                                    {formData.storageEngine === 'localstorage' && <div className="w-2 h-2 bg-blue-500 rounded-full"></div>}
+                                                </div>
+                                                <span className="font-bold text-gray-900">Local Storage</span>
+                                            </div>
+                                            <p className="text-xs text-gray-500 pl-7">Legacy mode. Limited to ~5MB. Only for very small shops.</p>
+                                        </label>
                                     </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Anon Public Key</label>
-                                        <div className="relative">
-                                            <input 
-                                                type="text" 
-                                                value={dbInput.key}
-                                                onChange={(e) => setDbInput(prev => ({...prev, key: e.target.value}))}
-                                                className="w-full p-3 bg-white border border-gray-200 rounded-xl text-gray-700 font-mono text-sm focus:border-primary outline-none transition-colors"
-                                                placeholder="eyJhbGciOiJIUzI1NiIsIn..."
-                                            />
+
+                                    {/* Internal Migration */}
+                                    <div className="pt-4 border-t border-blue-200 flex items-center justify-between">
+                                        <span className="text-xs text-blue-900 font-bold uppercase">Internal Migration</span>
+                                        <div className="flex gap-2">
+                                            <button 
+                                                onClick={() => handleMigration('indexeddb')}
+                                                disabled={isMigrating || formData.storageEngine === 'indexeddb'}
+                                                className="px-3 py-1.5 bg-white border border-blue-200 rounded-lg text-xs font-bold text-blue-700 hover:bg-blue-50 disabled:opacity-50 flex items-center gap-1"
+                                            >
+                                                {isMigrating ? <RefreshCw className="animate-spin" size={12}/> : <ArrowRightLeft size={12}/>} To IndexedDB
+                                            </button>
+                                            <button 
+                                                onClick={() => handleMigration('localstorage')}
+                                                disabled={isMigrating || formData.storageEngine === 'localstorage'}
+                                                className="px-3 py-1.5 bg-white border border-blue-200 rounded-lg text-xs font-bold text-blue-700 hover:bg-blue-50 disabled:opacity-50 flex items-center gap-1"
+                                            >
+                                                {isMigrating ? <RefreshCw className="animate-spin" size={12}/> : <ArrowRightLeft size={12}/>} To LocalStorage
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
+                            )}
 
-                                <div className="flex gap-4 mt-8">
-                                    <button 
-                                        onClick={handleSaveDatabase}
-                                        className="flex-1 py-3 bg-primary text-white font-bold rounded-xl hover:bg-slate-800 transition-colors shadow-lg shadow-primary/10 flex justify-center items-center gap-2"
-                                    >
-                                        <RefreshCw size={18}/> Update & Connect
-                                    </button>
-                                    {dbConfig.isCustom && (
-                                        <button 
-                                            onClick={handleResetDatabase}
-                                            className="px-6 py-3 bg-white border border-gray-200 text-gray-600 font-bold rounded-xl hover:bg-gray-50 transition-colors flex items-center gap-2"
-                                        >
-                                            <RotateCcw size={18}/> Reset
+                            {/* GLOBAL TOOLS */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Migration Tool */}
+                                <div className="bg-purple-50 border border-purple-100 p-4 rounded-xl">
+                                    <h4 className="font-bold text-purple-900 text-sm flex items-center gap-2 mb-2"><ArrowRightLeft size={16}/> Migration Center</h4>
+                                    <p className="text-xs text-purple-700 mb-3">Move data between devices or backup your store.</p>
+                                    <div className="flex gap-2">
+                                        <button onClick={handleExportData} className="flex-1 py-2 bg-white text-purple-700 font-bold rounded-lg border border-purple-200 hover:bg-purple-100 text-xs flex items-center justify-center gap-1">
+                                            <Download size={14}/> Backup (JSON)
                                         </button>
-                                    )}
+                                        <label className="flex-1 py-2 bg-purple-600 text-white font-bold rounded-lg hover:bg-purple-700 text-xs flex items-center justify-center gap-1 cursor-pointer shadow-sm">
+                                            <Upload size={14}/> Import Data
+                                            <input type="file" accept=".json" onChange={handleImportData} className="hidden"/>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                {/* Emergency Tools */}
+                                <div className="bg-yellow-50 border border-yellow-100 p-4 rounded-xl flex flex-col justify-between">
+                                    <div>
+                                        <h4 className="font-bold text-yellow-900 text-sm flex items-center gap-2"><Shield size={16}/> Admin Tools</h4>
+                                        <p className="text-xs text-yellow-700 mt-1 mb-2">Fix permissions or seed demo data.</p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button onClick={handleRepairRoles} className="flex-1 px-3 py-2 bg-yellow-100 text-yellow-800 font-bold rounded-lg hover:bg-yellow-200 transition-colors text-xs border border-yellow-200">
+                                            Repair Roles
+                                        </button>
+                                        <button onClick={handleSeedData} className="flex-1 px-3 py-2 bg-blue-100 text-blue-800 font-bold rounded-lg hover:bg-blue-200 transition-colors text-xs border border-blue-200">
+                                            Seed Data
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>

@@ -165,6 +165,9 @@ export interface AppSettings {
   deliveryFee: number;
   freeShippingThreshold: number;
   aiProvider: 'google' | 'openai' | 'grok' | 'perplexity' | 'deepseek';
+  // Storage Configuration
+  dbProvider: 'supabase' | 'firebase' | 'mongodb' | 'local'; 
+  storageEngine: 'localstorage' | 'indexeddb'; // Sub-option for 'local'
   socialLinks?: {
     instagram?: string;
     tiktok?: string;

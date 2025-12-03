@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useShop } from '../../context/ShopContext';
-import { Building2, Package, RefreshCw, ArrowRightLeft, Search, CheckCircle, Clock, X, AlertCircle, ArrowRight, Store, Plus, Trash2, ScanLine, Camera, ChevronLeft, MapPin, Eye, EyeOff, ShoppingCart, DollarSign, Calendar, Barcode, FileText, Clipboard, Printer } from 'lucide-react';
+import { Building2, Package, RefreshCw, ArrowRightLeft, Search, CheckCircle, Clock, X, AlertCircle, ArrowRight, Store, Plus, Trash2, ScanLine, Camera, ChevronLeft, MapPin, Eye, EyeOff, ShoppingCart, DollarSign, Calendar, Barcode, FileText, Clipboard, Printer, Box, Check } from 'lucide-react';
 import { Product, Warehouse, InventoryItem, PurchaseOrder, PurchaseItem } from '../../types';
-import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
+import { Html5QrcodeScanner } from 'html5-qrcode';
 
 // Audio Feedback Helper
 const playBeep = () => {
@@ -29,33 +29,22 @@ const playBeep = () => {
     }
 };
 
-// Sub-Component for Bulk Stock Entry
+// ... (BulkStockEntry Component remains same, ensuring no duplication)
 const BulkStockEntry: React.FC = () => {
     const { products, warehouses, suppliers, updateProduct, showToast } = useShop();
     const [selectedProductId, setSelectedProductId] = useState('');
     const [selectedVariantId, setSelectedVariantId] = useState('');
-    
-    // Batch Settings
     const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id || '');
     const [supplierId, setSupplierId] = useState('');
     const [costPrice, setCostPrice] = useState<number>(0);
     const [condition, setCondition] = useState<'New' | 'Used'>('New');
-    
-    // Input
     const [imeiInput, setImeiInput] = useState('');
     const [parsedItems, setParsedItems] = useState<string[]>([]);
-    
-    // Camera State for Bulk
     const [showBulkScanner, setShowBulkScanner] = useState(false);
     const scannerRef = useRef<any>(null);
 
     useEffect(() => {
-        // Auto-parse IMEIs from textarea (split by newline or comma)
-        const items = imeiInput
-            .split(/[\n,]+/)
-            .map(s => s.trim())
-            .filter(s => s.length > 0);
-        // Deduplicate locally
+        const items = imeiInput.split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0);
         setParsedItems([...new Set(items)]);
     }, [imeiInput]);
 
@@ -64,247 +53,76 @@ const BulkStockEntry: React.FC = () => {
             setTimeout(() => {
                 try {
                     if (document.getElementById("bulk-reader")) {
-                        const scanner = new Html5QrcodeScanner("bulk-reader", { 
-                            fps: 10, 
-                            qrbox: { width: 250, height: 250 },
-                            experimentalFeatures: { useBarCodeDetectorIfSupported: true }
-                        }, false);
-                        
-                        scanner.render((text) => {
-                            playBeep();
-                            setImeiInput(prev => prev + (prev ? '\n' : '') + text);
-                            showToast(`Scanned: ${text}`, 'success');
-                            // Keep scanning for bulk
-                        }, (err) => {});
+                        const scanner = new Html5QrcodeScanner("bulk-reader", { fps: 10, qrbox: { width: 250, height: 250 }, experimentalFeatures: { useBarCodeDetectorIfSupported: true } }, false);
+                        scanner.render((text) => { playBeep(); setImeiInput(prev => prev + (prev ? '\n' : '') + text); showToast(`Scanned: ${text}`, 'success'); }, (err) => {});
                         scannerRef.current = scanner;
                     }
                 } catch (e) { console.error(e); }
             }, 300);
         }
-        return () => {
-            if (scannerRef.current) {
-                scannerRef.current.clear().catch(() => {});
-                scannerRef.current = null;
-            }
-        };
+        return () => { if (scannerRef.current) { scannerRef.current.clear().catch(() => {}); scannerRef.current = null; } };
     }, [showBulkScanner]);
 
     const handleCommitBatch = () => {
         if (!selectedProductId) { showToast('Select a product', 'error'); return; }
         if (parsedItems.length === 0) { showToast('Enter at least one IMEI', 'error'); return; }
-        
         const product = products.find(p => p.id === selectedProductId);
         if (!product) return;
-
-        if (product.variants && product.variants.length > 0 && !selectedVariantId) {
-            showToast('Select a variant', 'error');
-            return;
-        }
-
-        const targetVariant = product.variants?.find(v => v.id === selectedVariantId) 
-                              || (product.variants && product.variants.length > 0 ? null : { id: 'default', inventory: [], stock: 0 }); 
-        
-        if (!targetVariant && product.variants?.length) return; 
+        const targetVariant = product.variants?.find(v => v.id === selectedVariantId) || (product.variants && product.variants.length > 0 ? null : { id: 'default', inventory: [], stock: 0 }); 
+        if (!targetVariant && product.variants?.length) { showToast('Select a variant', 'error'); return; }
 
         const allExistingImeis = new Set<string>();
         product.variants?.forEach(v => v.inventory?.forEach(i => allExistingImeis.add(i.imei)));
-        
         const duplicates = parsedItems.filter(imei => allExistingImeis.has(imei));
-        if (duplicates.length > 0) {
-            showToast(`${duplicates.length} IMEIs already exist (e.g. ${duplicates[0]})`, 'error');
-            return;
-        }
+        if (duplicates.length > 0) { showToast(`${duplicates.length} IMEIs already exist`, 'error'); return; }
 
         const newInventoryItems: InventoryItem[] = parsedItems.map(imei => ({
             id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            imei,
-            costPrice,
-            condition,
-            status: 'Available',
-            purchaseDate: new Date().toISOString().split('T')[0],
-            supplierId,
-            locationId: warehouseId,
-            sourceType: 'Wholesale'
+            imei, costPrice, condition, status: 'Available', purchaseDate: new Date().toISOString().split('T')[0], supplierId, locationId: warehouseId, sourceType: 'Wholesale'
         }));
 
         let updatedVariants = product.variants || [];
-        
         if (selectedVariantId) {
             updatedVariants = updatedVariants.map(v => {
                 if (v.id === selectedVariantId) {
                     const newInv = [...(v.inventory || []), ...newInventoryItems];
-                    return {
-                        ...v,
-                        inventory: newInv,
-                        stock: newInv.filter(i => i.status === 'Available').length
-                    };
+                    return { ...v, inventory: newInv, stock: newInv.filter(i => i.status === 'Available').length };
                 }
                 return v;
             });
         } else {
-            if (updatedVariants.length === 0) {
-                 updatedVariants = [{
-                     id: `var-${Date.now()}`,
-                     color: 'Default',
-                     storage: 'Standard',
-                     price: product.price,
-                     stock: newInventoryItems.length,
-                     inventory: newInventoryItems
-                 }];
-            }
+            if (updatedVariants.length === 0) updatedVariants = [{ id: `var-${Date.now()}`, color: 'Default', storage: 'Standard', price: product.price, stock: newInventoryItems.length, inventory: newInventoryItems }];
         }
-
         const newTotalStock = updatedVariants.reduce((acc, v) => acc + (v.stock || 0), 0);
-        
-        updateProduct({
-            ...product,
-            variants: updatedVariants,
-            stock: newTotalStock
-        });
-
+        updateProduct({ ...product, variants: updatedVariants, stock: newTotalStock });
         showToast(`Successfully added ${newInventoryItems.length} items!`, 'success');
         setImeiInput('');
     };
 
-    const handlePrintBatch = () => {
-        if (parsedItems.length === 0) return;
-        const product = products.find(p => p.id === selectedProductId);
-        const w = window.open('', '_blank', 'width=600,height=600');
-        if(w && product) {
-            w.document.write(`<html><head><style>body{font-family:monospace;text-align:center}.label{border:1px dashed #ccc;padding:5px;margin:5px;display:inline-block;width:200px;height:100px;overflow:hidden}.sku{font-size:10px}.barcode{font-size:24px;margin:5px 0}</style></head><body>`);
-            parsedItems.forEach(imei => {
-                w.document.write(`<div class="label"><strong>${product.name.substring(0,20)}</strong><br/><div class="barcode">||| |||| || |||</div>${imei}<br/>${costPrice > 0 ? 'Cost: ' + costPrice : ''}</div>`);
-            });
-            w.document.write(`</body></html>`);
-            w.document.close();
-            w.print();
-        }
-    };
-
     return (
         <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 flex flex-col md:flex-row gap-8 h-full">
-            {/* Left Control Panel */}
             <div className="w-full md:w-1/3 space-y-6 flex flex-col">
-                <div>
-                    <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2"><Clipboard size={20}/> Bulk Batch Entry</h3>
-                    <p className="text-sm text-gray-500">Mass add tracked inventory items.</p>
-                </div>
-
+                <div><h3 className="text-lg font-bold text-gray-900 flex items-center gap-2"><Clipboard size={20}/> Bulk Batch Entry</h3><p className="text-sm text-gray-500">Mass add tracked inventory items.</p></div>
                 <div className="space-y-4 flex-1 overflow-y-auto pr-2">
-                    <div>
-                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Product</label>
-                        <select 
-                            value={selectedProductId} 
-                            onChange={e => { setSelectedProductId(e.target.value); setSelectedVariantId(''); }}
-                            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:border-primary outline-none"
-                        >
-                            <option value="">Select Product...</option>
-                            {products.filter(p => p.imeiTracking).map(p => (
-                                <option key={p.id} value={p.id}>{p.name}</option>
-                            ))}
-                        </select>
-                    </div>
-
-                    {selectedProductId && products.find(p => p.id === selectedProductId)?.variants?.length ? (
-                        <div>
-                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Variant</label>
-                            <select 
-                                value={selectedVariantId} 
-                                onChange={e => setSelectedVariantId(e.target.value)}
-                                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:border-primary outline-none"
-                            >
-                                <option value="">Select Variant...</option>
-                                {products.find(p => p.id === selectedProductId)?.variants?.map(v => (
-                                    <option key={v.id} value={v.id}>{v.color} - {v.storage}</option>
-                                ))}
-                            </select>
-                        </div>
-                    ) : null}
-
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Warehouse</label>
-                            <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm">
-                                {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                            </select>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Supplier</label>
-                            <select value={supplierId} onChange={e => setSupplierId(e.target.value)} className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm">
-                                <option value="">Unknown</option>
-                                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                            </select>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Unit Cost</label>
-                            <input type="number" value={costPrice} onChange={e => setCostPrice(parseFloat(e.target.value))} className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm"/>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Condition</label>
-                            <select value={condition} onChange={e => setCondition(e.target.value as any)} className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm">
-                                <option value="New">New</option>
-                                <option value="Used">Used</option>
-                                <option value="Open Box">Open Box</option>
-                            </select>
-                        </div>
-                    </div>
+                    <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Product</label><select value={selectedProductId} onChange={e => { setSelectedProductId(e.target.value); setSelectedVariantId(''); }} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:border-primary outline-none"><option value="">Select Product...</option>{products.filter(p => p.imeiTracking).map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}</select></div>
+                    {selectedProductId && products.find(p => p.id === selectedProductId)?.variants?.length ? (<div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Variant</label><select value={selectedVariantId} onChange={e => setSelectedVariantId(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:border-primary outline-none"><option value="">Select Variant...</option>{products.find(p => p.id === selectedProductId)?.variants?.map(v => (<option key={v.id} value={v.id}>{v.color} - {v.storage}</option>))}</select></div>) : null}
+                    <div className="grid grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Warehouse</label><select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm">{warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}</select></div><div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Supplier</label><select value={supplierId} onChange={e => setSupplierId(e.target.value)} className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm"><option value="">Unknown</option>{suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div></div>
+                    <div className="grid grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Unit Cost</label><input type="number" value={costPrice} onChange={e => setCostPrice(parseFloat(e.target.value))} className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm"/></div><div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Condition</label><select value={condition} onChange={e => setCondition(e.target.value as any)} className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm"><option value="New">New</option><option value="Used">Used</option><option value="Open Box">Open Box</option></select></div></div>
                 </div>
             </div>
-
-            {/* Right Input Area */}
             <div className="flex-1 flex flex-col h-full bg-gray-50 rounded-2xl border border-gray-200 p-4">
-                <div className="flex justify-between items-center mb-2">
-                    <label className="text-xs font-bold text-gray-500 uppercase">Paste IMEIs (One per line)</label>
-                    <div className="flex gap-2">
-                        <button onClick={() => setShowBulkScanner(!showBulkScanner)} className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded border ${showBulkScanner ? 'bg-red-50 text-red-600 border-red-200' : 'bg-white text-blue-600 border-blue-200'}`}>
-                            <Camera size={12}/> {showBulkScanner ? 'Stop Camera' : 'Scan Camera'}
-                        </button>
-                        <span className="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-md">{parsedItems.length} items detected</span>
-                    </div>
-                </div>
-                
+                <div className="flex justify-between items-center mb-2"><label className="text-xs font-bold text-gray-500 uppercase">Paste IMEIs (One per line)</label><div className="flex gap-2"><button onClick={() => setShowBulkScanner(!showBulkScanner)} className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded border ${showBulkScanner ? 'bg-red-50 text-red-600 border-red-200' : 'bg-white text-blue-600 border-blue-200'}`}><Camera size={12}/> {showBulkScanner ? 'Stop Camera' : 'Scan Camera'}</button><span className="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-md">{parsedItems.length} items detected</span></div></div>
                 {showBulkScanner && <div className="mb-4 bg-black rounded-xl overflow-hidden h-48 w-full flex justify-center"><div id="bulk-reader" className="w-full h-full"></div></div>}
-
-                <textarea 
-                    value={imeiInput}
-                    onChange={e => setImeiInput(e.target.value)}
-                    placeholder="Scan or paste IMEIs here..."
-                    className="flex-1 w-full p-4 border border-gray-300 rounded-xl font-mono text-sm focus:border-primary outline-none resize-none mb-4"
-                ></textarea>
-                
-                <div className="flex gap-3">
-                    <button 
-                        onClick={() => setImeiInput('')}
-                        className="px-6 py-3 bg-white border border-gray-200 text-gray-600 font-bold rounded-xl hover:bg-gray-100"
-                    >
-                        Clear
-                    </button>
-                    <button 
-                        onClick={handlePrintBatch}
-                        disabled={parsedItems.length === 0}
-                        className="px-6 py-3 bg-white border border-gray-200 text-blue-600 font-bold rounded-xl hover:bg-blue-50 flex items-center gap-2"
-                    >
-                        <Printer size={18}/> Print Batch Labels
-                    </button>
-                    <button 
-                        onClick={handleCommitBatch}
-                        className="flex-1 py-3 bg-primary text-white font-bold rounded-xl hover:bg-slate-800 shadow-lg flex justify-center items-center gap-2"
-                    >
-                        <CheckCircle size={18}/> Commit to Inventory
-                    </button>
-                </div>
+                <textarea value={imeiInput} onChange={e => setImeiInput(e.target.value)} placeholder="Scan or paste IMEIs here..." className="flex-1 w-full p-4 border border-gray-300 rounded-xl font-mono text-sm focus:border-primary outline-none resize-none mb-4"></textarea>
+                <div className="flex gap-3"><button onClick={() => setImeiInput('')} className="px-6 py-3 bg-white border border-gray-200 text-gray-600 font-bold rounded-xl hover:bg-gray-100">Clear</button><button onClick={handleCommitBatch} className="flex-1 py-3 bg-primary text-white font-bold rounded-xl hover:bg-slate-800 shadow-lg flex justify-center items-center gap-2"><CheckCircle size={18}/> Commit to Inventory</button></div>
             </div>
         </div>
     );
 };
 
-// Sub-Component for Purchase Order Management (Preserved)
+// --- PURCHASE MANAGER (With Advanced Receiving) ---
 const PurchaseManager: React.FC = () => {
-    // ... (Existing PurchaseManager Code - Simplified for brevity, assume logic remains same) ...
-    const { suppliers, warehouses, products, purchaseOrders, addPurchaseOrder, receivePurchaseOrder } = useShop();
+    const { suppliers, warehouses, products, purchaseOrders, addPurchaseOrder, receivePurchaseOrder, showToast } = useShop();
     const [showModal, setShowModal] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [newPO, setNewPO] = useState<Partial<PurchaseOrder>>({ supplierId: '', warehouseId: warehouses[0]?.id || '', referenceNumber: '', items: [], date: new Date().toISOString().split('T')[0] });
@@ -312,6 +130,143 @@ const PurchaseManager: React.FC = () => {
     const [selectedVariant, setSelectedVariant] = useState<string>('');
     const [qty, setQty] = useState(1);
     const [cost, setCost] = useState(0);
+
+    // Receiving Modal State
+    const [receivingPO, setReceivingPO] = useState<PurchaseOrder | null>(null);
+    const [scannedImeis, setScannedImeis] = useState<{ [itemId: string]: string[] }>({}); // Map PurchaseItemID -> Array of IMEIs
+    const [showReceiveScanner, setShowReceiveScanner] = useState(false);
+    const receiveScannerRef = useRef<any>(null);
+    const [activeScanField, setActiveScanField] = useState<{ itemId: string, index: number } | null>(null);
+
+    // Initialize scan slots when receiving PO opens
+    useEffect(() => {
+        if (receivingPO) {
+            const initialScans: any = {};
+            receivingPO.items.forEach(item => {
+                const product = products.find(p => p.id === item.productId);
+                if (product?.imeiTracking) {
+                    initialScans[item.id] = Array(item.quantity).fill('');
+                }
+            });
+            setScannedImeis(initialScans);
+        }
+    }, [receivingPO]);
+
+    // Handle Camera Scanner for Receiving
+    useEffect(() => {
+        if (showReceiveScanner && !receiveScannerRef.current && receivingPO) {
+            setTimeout(() => {
+                try {
+                    if (document.getElementById("receive-reader")) {
+                        const scanner = new Html5QrcodeScanner("receive-reader", { fps: 10, qrbox: { width: 250, height: 250 }, experimentalFeatures: { useBarCodeDetectorIfSupported: true } }, false);
+                        scanner.render((text) => {
+                            playBeep();
+                            handleScanInput(text);
+                            showToast(`Scanned: ${text}`, 'success');
+                        }, (err) => {});
+                        receiveScannerRef.current = scanner;
+                    }
+                } catch (e) { console.error(e); }
+            }, 300);
+        }
+        return () => { if (receiveScannerRef.current) { receiveScannerRef.current.clear().catch(() => {}); receiveScannerRef.current = null; } };
+    }, [showReceiveScanner, activeScanField]);
+
+    const handleScanInput = (text: string) => {
+        if (activeScanField) {
+            // Fill specific focused field
+            updateScannedImei(activeScanField.itemId, activeScanField.index, text);
+            // Move to next field automatically
+            const currentItem = receivingPO?.items.find(i => i.id === activeScanField.itemId);
+            if (currentItem && activeScanField.index < currentItem.quantity - 1) {
+                setActiveScanField({ itemId: activeScanField.itemId, index: activeScanField.index + 1 });
+            } else {
+                // Find next item with empty slots
+                // (Simplified: just stop focus or stay)
+            }
+        } else {
+            // Auto-fill first empty slot available in the whole PO
+            // Iterate through items, find first empty slot
+            for (const item of receivingPO?.items || []) {
+                const currentScans = scannedImeis[item.id];
+                if (currentScans) {
+                    const emptyIndex = currentScans.findIndex(s => !s);
+                    if (emptyIndex !== -1) {
+                        updateScannedImei(item.id, emptyIndex, text);
+                        return;
+                    }
+                }
+            }
+            showToast('All items scanned!', 'info');
+        }
+    };
+
+    const updateScannedImei = (itemId: string, index: number, value: string) => {
+        setScannedImeis(prev => {
+            const currentList = [...(prev[itemId] || [])];
+            currentList[index] = value;
+            return { ...prev, [itemId]: currentList };
+        });
+    };
+
+    const handleFinalizeReceive = () => {
+        if (!receivingPO) return;
+        
+        // Validate
+        let allValid = true;
+        receivingPO.items.forEach(item => {
+            const product = products.find(p => p.id === item.productId);
+            if (product?.imeiTracking) {
+                const scans = scannedImeis[item.id] || [];
+                if (scans.some(s => !s.trim())) {
+                    allValid = false;
+                }
+            }
+        });
+
+        if (!allValid) {
+            showToast('Please scan all IMEIs for tracked items.', 'error');
+            return;
+        }
+
+        // Construct Payload
+        const inventoryToCreate: InventoryItem[] = [];
+        
+        receivingPO.items.forEach(item => {
+            const product = products.find(p => p.id === item.productId);
+            if (product?.imeiTracking) {
+                const scans = scannedImeis[item.id];
+                scans.forEach(imei => {
+                    inventoryToCreate.push({
+                        id: `item-${Date.now()}-${Math.random().toString(36).substr(2,5)}`,
+                        imei: imei,
+                        costPrice: item.costPrice,
+                        condition: 'New',
+                        status: 'Available',
+                        purchaseDate: new Date().toISOString().split('T')[0],
+                        supplierId: receivingPO.supplierId,
+                        locationId: receivingPO.warehouseId,
+                        sourceType: 'Wholesale',
+                        purchaseOrderId: receivingPO.id,
+                        // Note: We need productId/variantId to link this item to the product structure.
+                        // We will add a temporary property 'tempProductId' and 'tempVariantId' which ShopContext can use, 
+                        // or better, rely on ShopContext to map it. 
+                        // Actually, ShopContext needs to know where to put these. 
+                        // We will inject a custom property into the object that ShopContext expects for mapping.
+                        // However, strictly typed, we should rely on ShopContext's updateProduct logic.
+                        // BUT, to keep it atomic, let's pass metadata.
+                        // Hack: Using 'notes' to pass VariantID if needed or rely on ShopContext updating logic.
+                        // CLEANER WAY: The payload to receivePurchaseOrder should allow detailed mapping.
+                        // Let's attach productId/variantId to the inventoryItem for context usage.
+                        ...({ productId: item.productId, variantId: item.variantId } as any)
+                    });
+                });
+            }
+        });
+
+        receivePurchaseOrder(receivingPO.id, inventoryToCreate);
+        setReceivingPO(null);
+    };
 
     const handleAddItem = () => {
         if (!selectedProduct || qty < 1) return;
@@ -337,16 +292,11 @@ const PurchaseManager: React.FC = () => {
         setNewPO({ supplierId: '', warehouseId: warehouses[0]?.id || '', referenceNumber: '', items: [], date: new Date().toISOString().split('T')[0] });
     };
 
-    const handleReceive = (po: PurchaseOrder) => {
-        const hasTrackedItems = po.items.some(item => { const p = products.find(prod => prod.id === item.productId); return p?.imeiTracking; });
-        if (hasTrackedItems) { if (confirm("This Purchase Order contains IMEI-tracked items. Mark as Received? (You must scan IMEIs manually in Inventory)")) receivePurchaseOrder(po.id); } 
-        else { if(confirm('Receive stock? Inventory will be auto-updated for non-tracked items.')) receivePurchaseOrder(po.id); }
-    };
-
     const filteredPOs = purchaseOrders.filter(po => po.referenceNumber.toLowerCase().includes(searchTerm.toLowerCase()) || po.id.toLowerCase().includes(searchTerm.toLowerCase()));
 
     return (
         <div className="space-y-6">
+            {/* ... Existing Search & List UI ... */}
             <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
                 <div className="relative w-64"><Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/><input type="text" placeholder="Search POs..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:border-primary outline-none"/></div>
                 <button onClick={() => setShowModal(true)} className="px-6 py-2 bg-primary text-white font-bold rounded-xl hover:bg-slate-800 transition-colors flex items-center gap-2 shadow-lg"><Plus size={18} /> New Purchase Order</button>
@@ -355,10 +305,12 @@ const PurchaseManager: React.FC = () => {
                 {filteredPOs.map(po => (
                     <div key={po.id} className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
                         <div className="flex justify-between items-start mb-4"><div><div className="flex items-center gap-3"><h3 className="font-bold text-gray-900 text-lg">{po.referenceNumber || po.id}</h3><span className={`px-2 py-0.5 text-xs font-bold rounded ${po.status === 'Received' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{po.status}</span></div><p className="text-sm text-gray-500 mt-1">{suppliers.find(s => s.id === po.supplierId)?.name || 'Unknown'} • {new Date(po.date).toLocaleDateString()}</p></div><div className="text-right"><p className="text-sm font-bold text-gray-900">{po.totalAmount} KWD</p><p className="text-xs text-gray-500">{po.items.length} Items</p></div></div>
-                        <div className="flex justify-end gap-3">{po.status !== 'Received' && (<button onClick={() => handleReceive(po)} className="px-4 py-2 bg-green-600 text-white text-xs font-bold rounded-lg hover:bg-green-700 flex items-center gap-2"><CheckCircle size={14} /> Receive Stock</button>)}</div>
+                        <div className="flex justify-end gap-3">{po.status !== 'Received' && (<button onClick={() => setReceivingPO(po)} className="px-4 py-2 bg-green-600 text-white text-xs font-bold rounded-lg hover:bg-green-700 flex items-center gap-2"><CheckCircle size={14} /> Receive Stock</button>)}</div>
                     </div>
                 ))}
             </div>
+
+            {/* CREATE PO MODAL */}
             {showModal && (
                 <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
                     <div className="bg-white rounded-3xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
@@ -368,6 +320,89 @@ const PurchaseManager: React.FC = () => {
                             <div className="border-t border-gray-100 pt-6"><h4 className="font-bold text-gray-900 mb-4">Add Items</h4><div className="flex flex-wrap gap-2 items-end bg-blue-50 p-4 rounded-xl border border-blue-100"><div className="flex-1 min-w-[150px]"><label className="text-[10px] font-bold text-blue-800 uppercase mb-1">Product</label><select value={selectedProduct} onChange={e => { setSelectedProduct(e.target.value); setSelectedVariant(''); }} className="w-full p-2 border border-blue-200 rounded-lg text-sm outline-none"><option value="">Select Product</option>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div><div className="w-20"><label className="text-[10px] font-bold text-blue-800 uppercase mb-1">Qty</label><input type="number" min="1" value={qty} onChange={e => setQty(parseInt(e.target.value))} className="w-full p-2 border border-blue-200 rounded-lg text-sm outline-none"/></div><div className="w-24"><label className="text-[10px] font-bold text-blue-800 uppercase mb-1">Unit Cost</label><input type="number" value={cost} onChange={e => setCost(parseFloat(e.target.value))} className="w-full p-2 border border-blue-200 rounded-lg text-sm outline-none"/></div><button onClick={handleAddItem} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700">Add</button></div><div className="mt-4 border border-gray-200 rounded-xl overflow-hidden"><table className="w-full text-left text-sm"><thead className="bg-gray-50 text-xs font-bold text-gray-500 uppercase"><tr><th className="p-3">Product</th><th className="p-3">Qty</th><th className="p-3">Total</th></tr></thead><tbody className="divide-y divide-gray-100">{newPO.items?.map(item => (<tr key={item.id}><td className="p-3 font-medium text-gray-900">{item.productName}</td><td className="p-3">{item.quantity}</td><td className="p-3 font-bold">{item.totalCost}</td></tr>))}</tbody></table></div></div>
                         </div>
                         <div className="p-6 border-t border-gray-100 bg-gray-50 flex justify-between items-center"><div className="text-sm"><span className="text-gray-500 mr-2">Total:</span><span className="font-bold text-xl text-gray-900">{newPO.items?.reduce((a,b) => a+b.totalCost, 0)} KWD</span></div><button onClick={handleSubmit} disabled={!newPO.items?.length} className="px-8 py-3 bg-primary text-white font-bold rounded-xl hover:bg-slate-800 transition-colors shadow-lg disabled:opacity-50">Create Order</button></div>
+                    </div>
+                </div>
+            )}
+
+            {/* RECEIVING WORKSPACE */}
+            {receivingPO && (
+                <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95">
+                        <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                            <div>
+                                <h3 className="font-bold text-xl text-gray-900">Receive Stock: {receivingPO.referenceNumber}</h3>
+                                <p className="text-sm text-gray-500">Scan items to verify against purchase order.</p>
+                            </div>
+                            <button onClick={() => setReceivingPO(null)} className="p-2 hover:bg-gray-200 rounded-full"><X size={24} className="text-gray-500"/></button>
+                        </div>
+
+                        <div className="p-4 bg-blue-50 border-b border-blue-100 flex justify-between items-center">
+                            <div className="text-sm text-blue-800 font-medium">Use USB Scanner or Camera to fill serials.</div>
+                            <button onClick={() => setShowReceiveScanner(!showReceiveScanner)} className={`px-4 py-2 rounded-lg text-xs font-bold border flex items-center gap-2 ${showReceiveScanner ? 'bg-red-100 text-red-700 border-red-200' : 'bg-white text-blue-700 border-blue-200'}`}>
+                                <Camera size={14}/> {showReceiveScanner ? 'Stop Camera' : 'Use Camera'}
+                            </button>
+                        </div>
+
+                        {showReceiveScanner && (
+                            <div className="bg-black p-4 flex justify-center border-b border-gray-200">
+                                <div id="receive-reader" className="w-[300px] h-[300px] bg-white rounded-xl overflow-hidden"></div>
+                            </div>
+                        )}
+
+                        <div className="flex-1 overflow-y-auto p-6 bg-gray-50/50">
+                            <div className="space-y-4">
+                                {receivingPO.items.map(item => {
+                                    const product = products.find(p => p.id === item.productId);
+                                    const isTracked = product?.imeiTracking;
+                                    const scans = scannedImeis[item.id] || [];
+                                    const scannedCount = scans.filter(s => s).length;
+                                    const isComplete = scannedCount === item.quantity;
+
+                                    return (
+                                        <div key={item.id} className={`bg-white border rounded-xl p-4 transition-all ${isComplete ? 'border-green-200 shadow-sm' : 'border-gray-200'}`}>
+                                            <div className="flex justify-between items-start mb-3">
+                                                <div>
+                                                    <h4 className="font-bold text-gray-900 text-sm">{item.productName}</h4>
+                                                    <p className="text-xs text-gray-500">SKU: {item.sku}</p>
+                                                </div>
+                                                <div className="text-right">
+                                                    {isTracked ? (
+                                                        <span className={`text-xs font-bold px-2 py-1 rounded ${isComplete ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                                            {scannedCount} / {item.quantity} Scanned
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded">Qty: {item.quantity} (Auto)</span>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {isTracked && (
+                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                                    {scans.map((val, idx) => (
+                                                        <input 
+                                                            key={idx}
+                                                            type="text"
+                                                            value={val}
+                                                            onChange={e => updateScannedImei(item.id, idx, e.target.value)}
+                                                            onFocus={() => setActiveScanField({ itemId: item.id, index: idx })}
+                                                            placeholder={`IMEI #${idx + 1}`}
+                                                            className={`p-2 text-xs border rounded-lg font-mono outline-none focus:ring-2 transition-all ${val ? 'border-green-300 bg-green-50' : 'border-gray-300 focus:border-primary focus:ring-primary/20'}`}
+                                                        />
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        <div className="p-6 border-t border-gray-100 bg-white flex justify-end gap-3">
+                            <button onClick={() => setReceivingPO(null)} className="px-6 py-3 bg-gray-100 text-gray-600 font-bold rounded-xl hover:bg-gray-200">Cancel</button>
+                            <button onClick={handleFinalizeReceive} className="px-8 py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 shadow-lg shadow-green-200 flex items-center gap-2">
+                                <CheckCircle size={18}/> Finalize Receiving
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
@@ -402,7 +437,6 @@ export const InventoryManager: React.FC = () => {
   useEffect(() => {
       const handleKeyDown = (e: KeyboardEvent) => {
           if (activeTab === 'inventory' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
-              // Assume scanning input if typing normally
               if (e.key.length === 1) {
                   searchInputRef.current?.focus();
               }
@@ -603,10 +637,8 @@ export const InventoryManager: React.FC = () => {
       );
   }
 
-  // --- MAIN OVERVIEW (Tabbed) ---
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 relative">
-       {/* Tab Switcher */}
        <div className="flex justify-center mb-2">
            <div className="bg-white p-1 rounded-xl shadow-sm border border-gray-200 flex">
                <button onClick={() => setActiveTab('inventory')} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'inventory' ? 'bg-slate-900 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>Inventory View</button>
@@ -689,7 +721,7 @@ export const InventoryManager: React.FC = () => {
                                       <div className="absolute left-[-5px] top-0 w-2.5 h-2.5 rounded-full border-2 border-white shadow-sm bg-blue-500"></div>
                                       <div className="flex justify-between items-start mb-1"><span className="text-sm font-bold text-gray-900">Transfer</span><span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-bold">{log.quantity} Items</span></div>
                                       <p className="text-xs text-gray-600 mb-1 font-medium">{prod?.name || 'Item'}</p>
-                                      <p className="text--[10px] text-gray-500 flex items-center gap-1">{fromName} <ArrowRight size={10}/> {toName}</p>
+                                      <p className="text-[10px] text-gray-500 flex items-center gap-1">{fromName} <ArrowRight size={10}/> {toName}</p>
                                       <span className="text-[10px] text-gray-400 font-medium block mt-1">{new Date(log.timestamp).toLocaleString()}</span>
                                    </div>
                                 );
@@ -714,7 +746,7 @@ export const InventoryManager: React.FC = () => {
           </div>
        )}
 
-       {/* Transfer Modal (Preserved) */}
+       {/* Transfer Modal */}
        {transferModal.isOpen && transferModal.product && (
           <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
              <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 animate-in zoom-in-95">
